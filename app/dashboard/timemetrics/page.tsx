@@ -46,34 +46,39 @@ export default function TimeMetricsPage() {
     return slots.map(s => ({ slot: s, pnl: parseFloat(m[s].pnl.toFixed(2)), count: m[s].count }));
   }, [trades]);
 
+  // Session metadata: display label and WIB time range
+  // Hours are approximate — Overlap shifts ~1h depending on DST
+  const SESSION_META: Record<string, { label: string; hours: string; color: string }> = {
+    "Tokyo": { label: "Tokyo", hours: "02:00–09:00", color: "#8b5cf6" },
+    "Sydney": { label: "Sydney", hours: "04:00–13:00", color: "#6366f1" },
+    "London": { label: "London", hours: "14:00–00:00", color: "#3b82f6" },
+    "Overlap (LDN+NY)": { label: "Overlap", hours: "19:00–00:00", color: "#f59e0b" },
+    "New York": { label: "New York", hours: "19:00–05:00", color: "#10b981" },
+  };
+
+  const SESSION_ORDER = ["Tokyo", "Sydney", "London", "Overlap (LDN+NY)", "New York"];
+
   const bySession = useMemo(() => {
-    // Basic Forex Sessions mapped to WIB (UTC+7)
-    // Asian: 06:00 - 15:00 WIB
-    // London: 14:00 - 23:00 WIB
-    // NY: 19:00 - 04:00 WIB
-    const sessions = [
-      { name: "Asian", start: 6, end: 15 },
-      { name: "London", start: 14, end: 23 },
-      { name: "New York", start: 19, end: 4 } // Wraps around
-    ];
-    const m: Record<string, { pnl: number; count: number }> = { "Asian": { pnl: 0, count: 0 }, "London": { pnl: 0, count: 0 }, "New York": { pnl: 0, count: 0 } };
+    const m: Record<string, { pnl: number; count: number }> = {};
+    SESSION_ORDER.forEach(s => { m[s] = { pnl: 0, count: 0 }; });
 
     trades.filter(t => t.status === "closed").forEach(t => {
-      const wibH = parseInt(t.openTimeWIB?.slice(11, 13) || "0", 10);
-      sessions.forEach(s => {
-        let inside = false;
-        if (s.start < s.end) {
-          inside = (wibH >= s.start && wibH < s.end);
-        } else {
-          inside = (wibH >= s.start || wibH < s.end); // Wrap around midnight
-        }
-        if (inside) {
-          m[s.name].pnl += t.pnl;
-          m[s.name].count++;
-        }
-      });
+      const key = t.session as string;
+      if (!m[key]) m[key] = { pnl: 0, count: 0 };
+      m[key].pnl += t.pnl;
+      m[key].count += 1;
     });
-    return Object.keys(m).map(k => ({ session: k, pnl: parseFloat(m[k].pnl.toFixed(2)), count: m[k].count }));
+
+    return SESSION_ORDER
+      .filter(k => m[k].count > 0 || true) // always show all 5
+      .map(k => ({
+        session: k,
+        label: SESSION_META[k]?.label ?? k,
+        hours: SESSION_META[k]?.hours ?? "",
+        color: SESSION_META[k]?.color ?? "#6b7280",
+        pnl: parseFloat(m[k].pnl.toFixed(2)),
+        count: m[k].count,
+      }));
   }, [trades]);
 
   const durWins = formatDuration(stats.avgHoldWins);
@@ -83,7 +88,7 @@ export default function TimeMetricsPage() {
 
   const maxDow = Math.max(...byDow.map(d => Math.abs(d.pnl)), 1);
 
-  const bestSession = bySession.reduce((prev, current) => (prev.pnl > current.pnl) ? prev : current, bySession[0]);
+  const bestSession = bySession.reduce((prev, cur) => (prev.pnl > cur.pnl ? prev : cur), bySession[0]);
   const totalDays = byDow.filter(d => d.count > 0).length || 1;
   const avgTradesPerDay = (trades.length / totalDays).toFixed(1);
 
@@ -120,7 +125,7 @@ export default function TimeMetricsPage() {
           <div className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between text-[11px] font-medium border-b border-border/50 pb-1.5">
               <span className="text-text3">Most Profitable Session</span>
-              <span className="text-green font-bold tracking-[0.02em]">{bestSession.session}</span>
+              <span className="text-green font-bold tracking-[0.02em]">{bestSession?.label ?? bestSession?.session}</span>
             </div>
             <div className="flex items-center justify-between text-[11px] font-medium border-b border-border/50 pb-1.5">
               <span className="text-text3">Average Daily Trades</span>
@@ -128,7 +133,7 @@ export default function TimeMetricsPage() {
             </div>
             <div className="flex items-center justify-between text-[11px] font-medium">
               <span className="text-text3">Most Active Session</span>
-              <span className="text-text font-bold tracking-[0.02em]">{bySession.reduce((p, c) => p.count > c.count ? p : c, bySession[0]).session}</span>
+              <span className="text-text font-bold tracking-[0.02em]">{(() => { const m = bySession.reduce((p, c) => p.count > c.count ? p : c, bySession[0]); return m?.label ?? m?.session; })()}</span>
             </div>
           </div>
         </div>
@@ -162,17 +167,39 @@ export default function TimeMetricsPage() {
         <div className="card p-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="text-[12px] font-bold text-text">Market Sessions</div>
-            <span className="text-[9px] text-border2 -mt-[1px] cursor-help" title="Performance by overlapping major forex sessions">ⓘ</span>
+            <span className="text-[9px] text-border2 -mt-[1px] cursor-help" title="Performance per sesi trading (DST-aware)">ⓘ</span>
+            <span className="text-[9px] font-bold text-text3 ml-1 tracking-wider">(WIB / UTC+7)</span>
           </div>
-          <ResponsiveContainer width="100%" height={130}>
-            <ComposedChart data={bySession} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
-              <XAxis dataKey="session" tick={{ fontSize: 9, fill: "var(--text3)", fontWeight: 600 }} axisLine={false} tickLine={false} dy={6} />
+          <ResponsiveContainer width="100%" height={140}>
+            <ComposedChart data={bySession} margin={{ top: 5, right: 0, left: -25, bottom: 22 }}>
+              <XAxis
+                dataKey="session"
+                axisLine={false}
+                tickLine={false}
+                dy={6}
+                tick={(props) => {
+                  const { x, y, payload } = props;
+                  const meta = SESSION_META[payload.value];
+                  return (
+                    <g transform={`translate(${x},${y})`}>
+                      <text x={0} y={0} dy={4} textAnchor="middle" fill="var(--text3)" fontSize={9} fontWeight={700}>
+                        {meta?.label ?? payload.value}
+                      </text>
+                      <text x={0} y={0} dy={14} textAnchor="middle" fill="var(--text3)" fontSize={8} opacity={0.7}>
+                        {meta?.hours ?? ""}
+                      </text>
+                    </g>
+                  );
+                }}
+              />
               <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "var(--text3)" }} axisLine={false} tickLine={false} dx={-5} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "var(--text3)" }} axisLine={false} tickLine={false} dx={5} />
               <Tooltip {...tooltip} formatter={(value: number, name: string) => [name === "pnl" ? `$${value.toFixed(2)}` : value, name === "pnl" ? "PnL" : "Trades"]} cursor={{ fill: "var(--surface3)" }} />
               <ReferenceLine y={0} yAxisId="left" stroke="var(--border)" strokeWidth={1} />
-              <Bar yAxisId="left" dataKey="pnl" radius={[2, 2, 0, 0]} maxBarSize={24} fillOpacity={0.85}>
-                {bySession.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "var(--green)" : "var(--red)"} />)}
+              <Bar yAxisId="left" dataKey="pnl" radius={[2, 2, 0, 0]} maxBarSize={28} fillOpacity={0.88}>
+                {bySession.map((d, i) => (
+                  <Cell key={i} fill={d.count === 0 ? "var(--surface3)" : d.pnl >= 0 ? d.color : "var(--red)"} />
+                ))}
               </Bar>
               <Line yAxisId="right" type="step" dataKey="count" stroke="var(--pill)" strokeWidth={2} dot={{ r: 2.5, fill: "var(--surface)", strokeWidth: 1.5 }} activeDot={{ r: 4 }} />
             </ComposedChart>

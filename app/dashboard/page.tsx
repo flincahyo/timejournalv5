@@ -142,7 +142,14 @@ export default function DashboardPage() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [closed]);
   const sessTotal = sessData.reduce((a, [, n]) => a + n, 0) || 1;
-  const sessColors = ["#2563eb", "#f97316", "#8b5cf6", "#10b981", "#f43f5e"];
+
+  const SESSION_META: Record<string, { label: string; hours: string; color: string }> = {
+    "Tokyo": { label: "Tokyo", hours: "02:00–09:00 WIB", color: "#8b5cf6" },
+    "Sydney": { label: "Sydney", hours: "04:00–13:00 WIB", color: "#6366f1" },
+    "London": { label: "London", hours: "14:00–00:00 WIB", color: "#3b82f6" },
+    "Overlap (LDN+NY)": { label: "Overlap ⊕", hours: "19:00–00:00 WIB", color: "#f59e0b" },
+    "New York": { label: "New York", hours: "19:00–05:00 WIB", color: "#10b981" },
+  };
 
   const hourlyData = useMemo(() => {
     const m: Record<string, { pnl: number, count: number, wins: number }> = {};
@@ -425,16 +432,20 @@ export default function DashboardPage() {
           <div className="text-[12px] font-bold text-text mb-0.5">Sessions</div>
           <div className="text-[11px] text-text3 mb-4">Distribusi sesi trading</div>
           <div className="flex flex-col gap-3">
-            {sessData.map(([sess, n], i) => {
+            {sessData.map(([sess, n]) => {
               const w = (n / sessTotal) * 100;
+              const meta = SESSION_META[sess];
               return (
                 <div key={sess}>
-                  <div className="flex justify-between mb-1.25">
-                    <span className="text-xs font-medium text-text2">{sess.replace(" (LDN+NY)", "⊕")}</span>
+                  <div className="flex justify-between mb-1">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium text-text2">{meta?.label ?? sess}</span>
+                      {meta?.hours && <span className="text-[9px] text-text3 font-medium">{meta.hours}</span>}
+                    </div>
                     <span className="text-xs font-bold text-text font-mono">{n}</span>
                   </div>
                   <div className="h-1.5 bg-surface3 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${w}%`, background: sessColors[i % sessColors.length] }} />
+                    <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${w}%`, background: meta?.color ?? "#6b7280" }} />
                   </div>
                 </div>
               );

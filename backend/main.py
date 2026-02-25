@@ -113,11 +113,37 @@ def to_utc_iso(timestamp: int) -> str:
     utc = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
     return utc.isoformat()
 
-def detect_session(utc_hour: int) -> str:
-    if 12 <= utc_hour < 16: return "Overlap (LDN+NY)"
-    if 7  <= utc_hour < 16: return "London"
-    if 12 <= utc_hour < 21: return "New York"
-    if 0  <= utc_hour < 9:  return "Tokyo"
+# Session timezone objects (module-level, initialized once)
+_LONDON_TZ  = pytz.timezone("Europe/London")
+_NEW_YORK_TZ = pytz.timezone("America/New_York")
+
+def detect_session(utc_dt: datetime.datetime) -> str:
+    """
+    DST-aware Forex session detector.
+    Converts UTC datetime to London and New York local time,
+    then checks whether each market is open (08:00-17:00 local).
+    Overlap is detected when BOTH London AND New York are open.
+    Tokyo: 00:00-09:00 UTC (JST has no DST).
+    """
+    if utc_dt.tzinfo is None:
+        utc_dt = utc_dt.replace(tzinfo=datetime.timezone.utc)
+
+    london_hour = utc_dt.astimezone(_LONDON_TZ).hour
+    ny_hour     = utc_dt.astimezone(_NEW_YORK_TZ).hour
+
+    london_open = 8 <= london_hour < 17
+    ny_open     = 8 <= ny_hour     < 17
+
+    if london_open and ny_open:
+        return "Overlap (LDN+NY)"
+    if london_open:
+        return "London"
+    if ny_open:
+        return "New York"
+
+    utc_hour = utc_dt.hour
+    if 0 <= utc_hour < 9:
+        return "Tokyo"
     return "Sydney"
 
 def calc_pips(symbol: str, open_price: float, close_price: float, direction: str) -> float:
@@ -169,6 +195,8 @@ def deal_to_trade(deal) -> Optional[Dict]:
 
     symbol = deal.symbol or ""
     pips = calc_pips(symbol, open_price, deal.price, direction)
+
+    open_dt_for_session = open_dt_utc  # already tz-aware
 
     # Determine close type by checking MT5 deal reason
     # 4 = DEAL_REASON_SL, 5 = DEAL_REASON_TP
@@ -227,7 +255,7 @@ def deal_to_trade(deal) -> Optional[Dict]:
         "swap": round(deal.swap, 2),
         "commission": round(deal.commission, 2),
         "rr": rr,
-        "session": detect_session(open_dt_utc.hour),
+        "session": detect_session(open_dt_utc),
         "setup": "MT5 Import",
         "emotion": "Neutral",
         "status": "closed",
@@ -242,6 +270,7 @@ def position_to_trade(pos) -> Dict:
     now_utc = datetime.datetime.now(tz=datetime.timezone.utc)
     duration_ms = int((now_utc - open_dt_utc).total_seconds() * 1000)
     direction = "BUY" if pos.type == 0 else "SELL"
+    open_dt_utc_pos = datetime.datetime.fromtimestamp(pos.time, tz=datetime.timezone.utc)
     pips = calc_pips(pos.symbol, pos.price_open, pos.price_current, direction)
 
     return {
@@ -261,7 +290,7 @@ def position_to_trade(pos) -> Dict:
         "pips": pips,
         "swap": round(pos.swap, 2),
         "commission": 0.0, "rr": 0.0,
-        "session": detect_session(open_dt_utc.hour),
+        "session": detect_session(open_dt_utc_pos),
         "setup": "Live Position",
         "emotion": "Neutral",
         "status": "live",
@@ -524,7 +553,7 @@ def _generate_mock(count=80):
             "pnl": pnl, "pips": pips,
             "swap": round(random.uniform(-2,0),2),
             "commission": round(random.uniform(-3,0),2), "rr": round(random.uniform(0.3,3.5),2),
-            "session": detect_session(open_utc.hour),
+            "session": detect_session(open_utc),
             "setup": random.choice(setups), "emotion": "Neutral",
             "status": "closed",
             "closeType": "target_hit" if pnl>0 else ("stopped_out" if random.random()>0.5 else "manually_closed"),
