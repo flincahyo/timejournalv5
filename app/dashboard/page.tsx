@@ -132,6 +132,33 @@ export default function DashboardPage() {
     }));
   }, [closed]);
 
+  const weeklyData = useMemo(() => {
+    const m: Record<string, number> = {};
+    closed.forEach(t => {
+      const d = t.openTimeWIB?.slice(0, 10);
+      if (!d) return;
+      const dt = new Date(d + "T12:00:00");
+      // ISO week: Mon-based week number within the month
+      const dayOfMonth = dt.getDate();
+      const weekNum = Math.ceil(dayOfMonth / 7);
+      const monthLabel = dt.toLocaleDateString("id-ID", { month: "short", year: "2-digit" });
+      const key = `${d.slice(0, 7)}-W${weekNum}`;
+      const label = `W${weekNum} ${monthLabel}`;
+      if (!m[key]) (m as any)[`_lbl_${key}`] = label;
+      m[key] = (m[key] || 0) + t.pnl;
+    });
+    return Object.keys(m)
+      .filter(k => !k.startsWith("_lbl_"))
+      .sort()
+      .slice(-16)
+      .map(k => ({
+        week: (m as any)[`_lbl_${k}`] ?? k.slice(-4),
+        pnl: parseFloat(m[k].toFixed(2)),
+      }));
+  }, [closed]);
+
+  const [flippedCard, setFlippedCard] = useState(false);
+
   const symData = useMemo(() =>
     Object.values(stats.symbolStats ?? {}).sort((a, b) => b.pnl - a.pnl).slice(0, 5)
     , [stats]);
@@ -371,21 +398,55 @@ export default function DashboardPage() {
       {/* â”€â”€ ROW 4: Monthly bars + Hourly + Session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-[1fr_260px_260px] gap-3.5 mb-3.5">
 
-        {/* Monthly bar chart */}
-        <div className="card au d5 p-5">
-          <div className="text-[12px] font-bold text-text mb-0.5">Monthly Performance</div>
-          <div className="text-[11px] text-text3 mb-4">PnL per bulan</div>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={monthlyData} barSize={14} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={46} tickFormatter={v => `$${v}`} />
-              <Tooltip content={<CTip />} />
-              <Bar dataKey="pnl" radius={[5, 5, 0, 0]}>
-                {monthlyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#2563eb" : "#f97316"} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        {/* Monthly / Weekly flip card */}
+        <div
+          className="flip-card au d5 cursor-pointer"
+          onClick={() => setFlippedCard(f => !f)}
+          title={flippedCard ? "Klik untuk lihat Monthly" : "Klik untuk lihat Weekly"}
+        >
+          <div className={`flip-card-inner${flippedCard ? " flipped" : ""}`}>
+
+            {/* FRONT — Monthly */}
+            <div className="flip-card-front card p-5">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="text-[12px] font-bold text-text">Monthly Performance</div>
+                <span className="text-[9px] text-text3 bg-surface2 border border-border rounded-full px-2 py-0.5 font-medium">↻ Weekly</span>
+              </div>
+              <div className="text-[11px] text-text3 mb-4">PnL per bulan</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={monthlyData} barSize={14} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={46} tickFormatter={v => `$${v}`} />
+                  <Tooltip content={<CTip />} />
+                  <Bar dataKey="pnl" radius={[5, 5, 0, 0]}>
+                    {monthlyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#2563eb" : "#f97316"} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* BACK — Weekly */}
+            <div className="flip-card-back card p-5">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="text-[12px] font-bold text-text">Weekly Performance</div>
+                <span className="text-[9px] text-text3 bg-surface2 border border-border rounded-full px-2 py-0.5 font-medium">↻ Monthly</span>
+              </div>
+              <div className="text-[11px] text-text3 mb-4">PnL per minggu (16 minggu terakhir)</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={weeklyData} barSize={10} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="week" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} interval={0} angle={-30} dy={6} />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={46} tickFormatter={v => `$${v}`} />
+                  <Tooltip content={<CTip />} />
+                  <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                    {weeklyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#4f81c7" : "#b0793a"} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+          </div>
         </div>
 
         {/* Hourly performance widget */}
