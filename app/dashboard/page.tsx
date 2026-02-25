@@ -393,7 +393,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-start pr-2.5 mb-4">
             <div className="text-[12px] font-bold text-text">Hourly</div>
           </div>
-          <div className="flex flex-col gap-3 pr-2.5 overflow-y-auto max-h-[200px] scrollbar-thin">
+          <div className="flex flex-col gap-1 pr-2.5 overflow-y-auto max-h-[200px] scrollbar-thin">
             {hourlyData.map(([hour, data]) => {
               const maxAbs = Math.max(...hourlyData.map(([, d]) => Math.abs(d.pnl)), 1);
               const w = Math.abs(data.pnl) / maxAbs * 100;
@@ -404,9 +404,9 @@ export default function DashboardPage() {
               return (
                 <div key={hour} className="border-b border-border/40 pb-2.5 last:border-0 last:pb-0">
                   <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-[12px] font-medium text-text">{hour}:00</span>
+                    <span className="text-[11px] font-medium text-text">{hour}:00</span>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[13px] font-bold text-text">
+                      <span className="text-[11px] font-bold text-text">
                         {data.pnl < 0 ? "-" : ""}${Math.abs(data.pnl).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                       </span>
                       <span className="text-[10px] text-text3 font-medium min-w-[32px] text-right">{winRate.toFixed(0)}%</span>
