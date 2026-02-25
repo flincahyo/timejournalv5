@@ -158,6 +158,21 @@ export default function DashboardPage() {
   }, [closed]);
 
   const [flippedCard, setFlippedCard] = useState(false);
+  const [flippedPipsCard, setFlippedPipsCard] = useState(false);
+
+  const pipsBySymbol = useMemo(() => {
+    const m: Record<string, { pips: number; count: number }> = {};
+    closed.forEach(t => {
+      if (!t.symbol) return;
+      if (!m[t.symbol]) m[t.symbol] = { pips: 0, count: 0 };
+      m[t.symbol].pips += t.pips || 0;
+      m[t.symbol].count += 1;
+    });
+    return Object.entries(m)
+      .map(([sym, d]) => ({ sym, pips: parseFloat(d.pips.toFixed(1)), count: d.count }))
+      .sort((a, b) => Math.abs(b.pips) - Math.abs(a.pips))
+      .slice(0, 8);
+  }, [closed]);
 
   const symData = useMemo(() =>
     Object.values(stats.symbolStats ?? {}).sort((a, b) => b.pnl - a.pnl).slice(0, 5)
@@ -289,7 +304,56 @@ export default function DashboardPage() {
       {/* â”€â”€ ROW 1: 4 KPI cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-4 gap-3.5 mb-3.5">
         <KpiCard index={0} label="Total PnL" value={fmtUSD(stats.totalPnl)} sub={`${stats.wins}W / ${stats.losses}L`} subPos={stats.totalPnl >= 0} />
-        <KpiCard index={1} label="Total Pips" value={(stats.totalPips ?? 0) >= 0 ? "+" + ((stats.totalPips ?? 0).toFixed(1)) : (stats.totalPips ?? 0).toFixed(1)} sub={`Avg ${(stats.avgPips ?? 0).toFixed(1)} pips/trade`} subPos={(stats.totalPips ?? 0) >= 0} />
+        {/* Total Pips flip card */}
+        <div
+          className="flip-card au card cursor-pointer"
+          style={{ animationDelay: "0.07s", minHeight: "110px" }}
+          onClick={() => setFlippedPipsCard(f => !f)}
+        >
+          <div className={`flip-card-inner${flippedPipsCard ? " flipped" : ""}`}>
+            {/* FRONT — summary */}
+            <div className="flip-card-front p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase">Total Pips</div>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">per symbol ↻</span>
+              </div>
+              <div className="text-[22px] font-extrabold text-text tracking-[-0.6px] leading-tight my-1">
+                {(stats.totalPips ?? 0) >= 0 ? "+" : ""}{(stats.totalPips ?? 0).toFixed(1)}
+              </div>
+              <div className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${(stats.totalPips ?? 0) >= 0 ? "text-green" : "text-red"}`}>
+                <span className="text-[8px]">{(stats.totalPips ?? 0) >= 0 ? "▲" : "▼"}</span>
+                Avg {(stats.avgPips ?? 0).toFixed(1)} pips/trade
+              </div>
+            </div>
+            {/* BACK — per symbol */}
+            <div className="flip-card-back p-4 flex flex-col h-full">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] font-bold text-text uppercase tracking-[.05em]">Pips / Symbol</div>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">total ↻</span>
+              </div>
+              <div className="flex flex-col gap-1.5 overflow-y-auto flex-1">
+                {pipsBySymbol.length === 0 && <span className="text-text3 text-[10px]">No data</span>}
+                {pipsBySymbol.map(({ sym, pips }) => {
+                  const maxAbs = Math.max(...pipsBySymbol.map(d => Math.abs(d.pips)), 1);
+                  const pos = pips >= 0;
+                  return (
+                    <div key={sym}>
+                      <div className="flex justify-between items-baseline mb-0.5">
+                        <span className="text-[9px] font-bold text-text2">{sym}</span>
+                        <span className="text-[9px] font-bold font-mono" style={{ color: pos ? "#4f81c7" : "#b0793a" }}>
+                          {pos ? "+" : ""}{pips}
+                        </span>
+                      </div>
+                      <div className="h-[3px] bg-surface3 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(Math.abs(pips) / maxAbs) * 100}%`, background: pos ? "#4f81c7" : "#b0793a" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
         <KpiCard index={2} label="Profit Factor" value={stats.profitFactor.toFixed(2) + "×"} sub={`EV ${fmtUSD(stats.expectedValue)}`} subPos={stats.profitFactor >= 1} />
         <KpiCard index={3} label="Win Rate" value={stats.winRate.toFixed(1) + "%"} sub={`${stats.totalTrades} total trades`} subPos={stats.winRate >= 50} />
       </div>
