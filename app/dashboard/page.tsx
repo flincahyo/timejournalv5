@@ -438,9 +438,9 @@ export default function DashboardPage() {
               return (
                 <div key={sess}>
                   <div className="flex justify-between mb-1">
-                    <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-xs font-medium text-text2">{meta?.label ?? sess}</span>
-                      {meta?.hours && <span className="text-[9px] text-text3 font-medium">{meta.hours}</span>}
+                      {meta?.hours && <span className="text-[9px] text-text3 font-medium opacity-70">{meta.hours}</span>}
                     </div>
                     <span className="text-xs font-bold text-text font-mono">{n}</span>
                   </div>
