@@ -392,8 +392,8 @@ async def connect_mt5(req: ConnectRequest):
     _conn_params = {"login": req.login, "server": req.server}
     _connected = True
 
-    # Fetch 90 days history
-    date_from = datetime.datetime.now() - datetime.timedelta(days=90)
+    # Fetch all history (from year 2000 onwards)
+    date_from = datetime.datetime(2000, 1, 1)
     date_to   = datetime.datetime.now() + datetime.timedelta(hours=1)
     deals = mt5.history_deals_get(date_from, date_to) or []
 
