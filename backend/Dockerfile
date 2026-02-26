@@ -1,22 +1,21 @@
-# Base: Ubuntu 22.04 + Python 3.10 + Wine (i386)
-FROM ubuntu:22.04
+# Base: Python 3.11 Bullseye (Full version - includes build tools)
+FROM python:3.11-bullseye
 
-# Avoid prompts and force IPv4 for apt (fixes exit code 100 on many VPS)
-ENV DEBIAN_FRONTEND=noninteractive
+# Force IPv4 for apt (fixes exit code 100 on many VPS)
 RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
-# Install Python, Wine and prerequisites
+# Set Wine environment
+ENV WINEPREFIX=/root/.wine
+ENV WINEARCH=win64
+ENV DISPLAY=:99
+
+# Install Wine and prerequisites
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-dev \
-    build-essential \
-    libffi-dev \
-    libssl-dev \
-    wine64 \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    wine \
     wine32:i386 \
+    wine64 \
     xvfb \
     wget \
     ca-certificates \
@@ -25,29 +24,23 @@ RUN dpkg --add-architecture i386 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Fix python symlink
-RUN ln -s /usr/bin/python3 /usr/bin/python
-
-# Set Wine environment
-ENV WINEPREFIX=/root/.wine
-ENV WINEARCH=win64
-ENV DISPLAY=:99
-
 WORKDIR /app
 
-# Copy requirements first (caching layer)
+# Copy and install dependencies
+# We use a full image, so compilers for asyncpg/cryptography are already there
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt --verbose
 
 # Copy backend code
 COPY . .
 
-# Create data directory for any file-based artifacts
+# Create data directory
 RUN mkdir -p /app/data
 
 EXPOSE 8000
 
-# Start Xvfb (virtual display for Wine) + backend
+# Start virtual display + backend
 CMD Xvfb :99 -screen 0 1024x768x16 & \
     sleep 2 && \
     uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
