@@ -1,20 +1,29 @@
-# Base: Python 3.11 + Wine (i386) for running MetaTrader5 on Linux
-FROM python:3.11-bookworm
+# Base: Ubuntu 22.04 + Python 3.10 + Wine (i386)
+FROM ubuntu:22.04
 
-# Install Wine prerequisites
+# Avoid prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python, Wine and prerequisites
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
     wine64 \
     wine32:i386 \
     xvfb \
     winetricks \
     wget \
     cabextract \
+    ca-certificates \
     libglib2.0-0 \
     libgomp1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Fix python symlink
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Set Wine environment
 ENV WINEPREFIX=/root/.wine
