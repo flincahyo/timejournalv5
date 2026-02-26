@@ -134,8 +134,24 @@ from database import AsyncSessionLocal
 # ── App lifespan ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
-    print("✅ Database initialized")
+    from database import DATABASE_URL
+    # Mask password for security
+    masked_url = DATABASE_URL
+    if "@" in DATABASE_URL:
+        base, rest = DATABASE_URL.split("@", 1)
+        if ":" in base:
+            proto, creds = base.split("://", 1)
+            masked_url = f"{proto}://***:***@{rest}"
+    
+    print(f"📡 Connecting to database: {masked_url}")
+    try:
+        await asyncio.wait_for(init_db(), timeout=20.0)
+        print("✅ Database initialized successfully")
+    except asyncio.TimeoutError:
+        print("❌ Database initialization TIMEOUT (check your PostgreSQL connectivity)")
+    except Exception as e:
+        print(f"❌ Database initialization FAILED: {e}")
+        
     yield
     await mt5_manager.shutdown_all()
 
