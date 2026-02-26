@@ -1,8 +1,9 @@
 # Base: Ubuntu 22.04 + Python 3.10 + Wine (i386)
 FROM ubuntu:22.04
 
-# Avoid prompts
+# Avoid prompts and force IPv4 for apt (fixes exit code 100 on many VPS)
 ENV DEBIAN_FRONTEND=noninteractive
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
 # Install Python, Wine and prerequisites
 RUN dpkg --add-architecture i386 && \
@@ -13,9 +14,7 @@ RUN dpkg --add-architecture i386 && \
     wine64 \
     wine32:i386 \
     xvfb \
-    winetricks \
     wget \
-    cabextract \
     ca-certificates \
     libglib2.0-0 \
     libgomp1 && \
