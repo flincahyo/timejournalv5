@@ -1,6 +1,5 @@
-# ── Backend Dockerfile with Wine + MT5 support ──────────────────────────────
 # Base: Python 3.11 + Wine (i386) for running MetaTrader5 on Linux
-FROM python:3.11-slim
+FROM python:3.11-bookworm
 
 # Install Wine prerequisites
 RUN dpkg --add-architecture i386 && \
