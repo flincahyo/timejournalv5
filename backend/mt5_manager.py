@@ -257,8 +257,18 @@ class MT5WorkerProcess:
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(_WORKER_SCRIPT)
 
+        # On Linux, we must run the worker script via Wine's Windows Python
+        executable = sys.executable
+        args = [script_path]
+        
+        if sys.platform == "linux":
+            # Assuming 'python' in Wine is available as 'wine python' 
+            # or we point to the specific wine python path
+            executable = "wine"
+            args = ["python", script_path]
+
         self._proc = await asyncio.create_subprocess_exec(
-            sys.executable, script_path,
+            executable, *args,
             "--login", str(self.login),
             "--password", self.password,
             "--server", self.server,
