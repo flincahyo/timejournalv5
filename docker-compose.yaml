@@ -43,7 +43,8 @@ services:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/api/health" ]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 40s
 
   # ── Next.js Frontend ─────────────────────────────────────────────────────────
   frontend:
@@ -62,7 +63,8 @@ services:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000" ]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
 
   # ── Nginx Reverse Proxy ───────────────────────────────────────────────────────
   nginx:
