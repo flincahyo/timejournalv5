@@ -22,10 +22,7 @@ RUN dpkg --add-architecture i386 && \
     python3-dev \
     build-essential \
     libglib2.0-0 \
-    libgomp1 \
-    # Added Gecko and Mono for better stability
-    wine-gecko \
-    wine-mono && \
+    libgomp1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -34,6 +31,7 @@ ENV WINEPREFIX=/root/.wine
 ENV WINEARCH=win64
 ENV DISPLAY=:99
 ENV WINEDEBUG=-all
+ENV WINEDLLOVERRIDES="mscoree,mshtml=n"
 
 WORKDIR /app
 
