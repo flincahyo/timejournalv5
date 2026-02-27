@@ -6,28 +6,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Force IPv4 for apt (fixes exit code 100 on many VPS)
 RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
-# Install Wine, Xvfb, and Python 3
+# Install System Dependencies
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    wine \
-    wine64 \
-    wine32 \
-    xvfb \
-    xauth \
-    wget \
-    ca-certificates \
-    python3 \
-    python3-pip \
-    python3-dev \
-    build-essential \
-    libglib2.0-0 \
-    libgomp1 \
-    unzip \
-    winetricks \
-    cabextract && \
+    wine wine64 wine32 xvfb xauth wget ca-certificates \
+    python3 python3-pip python3-dev build-essential \
+    libglib2.0-0 libgomp1 unzip cabextract && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Install Winetricks (Standalone Script - Lighter than apt package)
+RUN wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O /usr/local/bin/winetricks && \
+    chmod +x /usr/local/bin/winetricks
 
 # Set Wine environment
 ENV WINEPREFIX=/root/.wine
@@ -56,13 +47,13 @@ RUN mkdir -p /root/.wine/drive_c/python311 && \
     sed -i 's/#import site/import site/' /root/.wine/drive_c/python311/python311._pth && \
     rm /tmp/python.zip
 
-# Install MT5 Library inside Wine Python
+# Install PIP and MetaTrader5 Library inside Wine Python
 RUN wget -q https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py && \
     xvfb-run wine C:\\python311\\python.exe /tmp/get-pip.py && \
     xvfb-run wine C:\\python311\\python.exe -m pip install MetaTrader5 pytz proxy-randomizer && \
     rm /tmp/get-pip.py
 
-# Install VC++ Runtime for MT5 support (crucial for mt5 library)
+# Install VC++ Runtime for MT5 support (using standalone winetricks)
 RUN xvfb-run winetricks -q vcrun2015
 
 EXPOSE 8000
