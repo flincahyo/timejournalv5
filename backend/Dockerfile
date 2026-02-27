@@ -12,7 +12,7 @@ RUN dpkg --add-architecture i386 && \
     apt-get install -y --no-install-recommends \
     wine wine64 wine32 xvfb xauth wget ca-certificates \
     python3 python3-pip python3-dev build-essential \
-    libglib2.0-0 libgomp1 unzip cabextract p7zip-full && \
+    libglib2.0-0 libgomp1 unzip cabextract && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -51,14 +51,17 @@ RUN Xvfb :99 -screen 0 1024x768x16 & sleep 2 && \
     wine C:\\python311\\python.exe -m pip install --quiet MetaTrader5 pytz && \
     rm /tmp/get-pip.py
 
-# ── Step 3: Extract MT5 Terminal via 7zip (NO GUI INSTALLER NEEDED) ─────────
-# Download the MT5 installer and extract its contents directly
-RUN Xvfb :99 -screen 0 1024x768x16 & sleep 1 && \
-    wget -q https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -O /tmp/mt5setup.exe && \
-    mkdir -p "/root/.wine/drive_c/Program Files/MetaTrader 5" && \
-    7z x /tmp/mt5setup.exe -o"/root/.wine/drive_c/Program Files/MetaTrader 5" -y > /dev/null 2>&1 || true && \
-    rm /tmp/mt5setup.exe && \
-    ls "/root/.wine/drive_c/Program Files/MetaTrader 5/" || echo "MT5 extraction completed (files may be in subdirectory)"
+# ── Step 3: Download & Extract MT5 Terminal (from pre-installed zip) ─────────
+# Uses Google Drive hosted zip of a real MT5 installation (no GUI installer needed)
+RUN mkdir -p "/root/.wine/drive_c/Program Files/MetaTrader 5" && \
+    wget --no-check-certificate -q \
+    "https://drive.usercontent.google.com/download?id=1HBOqa91b19buXsOHpjXMfNRUFXPEmrtz&export=download&confirm=t" \
+    -O /tmp/mt5_terminal.zip && \
+    unzip -q /tmp/mt5_terminal.zip -d "/root/.wine/drive_c/Program Files/MetaTrader 5/" && \
+    rm /tmp/mt5_terminal.zip && \
+    echo "MT5 extraction done:" && \
+    find "/root/.wine/drive_c/Program Files/MetaTrader 5" -name "terminal64.exe" && \
+    echo "---"
 
 EXPOSE 8000
 
