@@ -261,9 +261,9 @@ class MT5WorkerProcess:
         env = os.environ.copy()
         env["DISPLAY"] = os.environ.get("DISPLAY", ":99")
         env["WINEPREFIX"] = os.environ.get("WINEPREFIX", "/root/.wine")
-        # Disable some wine popups/logs to keep it clean
+        # Disable some wine popups/logs to keep it clean, force native UCRT
         env["WINEDEBUG"] = "-all"
-        env["WINEDLLOVERRIDES"] = "mscoree,mshtml=n"
+        env["WINEDLLOVERRIDES"] = "mscoree,mshtml=n;ucrtbase,vcruntime140=n,v"
 
         # On Linux, we must run the worker script via Wine's Windows Python
         executable = sys.executable
