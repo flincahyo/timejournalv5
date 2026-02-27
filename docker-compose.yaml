@@ -36,6 +36,8 @@ services:
       # Mount Wine prefix with pre-installed MT5 terminal
       - wine_prefix:/root/.wine
       - backend_data:/app/data
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +58,8 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+    ports:
+      - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy
