@@ -362,7 +362,7 @@ async def disconnect_mt5(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await mt5_manager.disconnect(user.id)
+    await mt5_manager.disconnect(str(user.id))
     result = await db.execute(
         select(MT5Connection).where(MT5Connection.user_id == user.id, MT5Connection.is_active == True)
     )
@@ -375,7 +375,7 @@ async def disconnect_mt5(
 
 @app.get("/api/mt5/status")
 async def mt5_status(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    is_connected = mt5_manager.is_connected(user.id)
+    is_connected = mt5_manager.is_connected(str(user.id))
     
     result = await db.execute(
         select(MT5Connection).where(MT5Connection.user_id == user.id, MT5Connection.is_active == True)
