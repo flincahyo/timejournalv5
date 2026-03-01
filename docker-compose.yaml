@@ -4,7 +4,11 @@ services:
   # ── PostgreSQL Database ──────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
+    hostname: timejournal-db
     restart: unless-stopped
+    networks:
+      - coolify
+      - default
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-timejournal}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-timejournal}
@@ -29,7 +33,7 @@ services:
       - coolify
       - default
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-timejournal}:${POSTGRES_PASSWORD:-timejournal}@postgres:5432/${POSTGRES_DB:-timejournal}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-timejournal}:${POSTGRES_PASSWORD:-timejournal}@timejournal-db:5432/${POSTGRES_DB:-timejournal}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE_ME_USE_RANDOM_32_CHARS}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       XAI_API_KEY: ${XAI_API_KEY:-}
