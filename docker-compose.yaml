@@ -82,11 +82,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile.nginx
     restart: unless-stopped
-    # Ports 80/443 are handled by Coolify's proxy. 
-    # Internal routing will use the container's port 80.
+    # Must be in 'coolify' network so Coolify's Caddy proxy can reach this container
+    networks:
+      - coolify # ← Coolify proxy network (required for Caddy routing)
+      - default # ← Project network (for internal routing to frontend/backend)
     expose:
       - "80"
-      - "443"
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1/api/health > /dev/null || exit 1" ]
       interval: 30s
@@ -102,3 +103,8 @@ services:
 volumes:
   postgres_data:
   backend_data:
+
+
+networks:
+  coolify:
+    external: true # Coolify's proxy network — must exist on the host
