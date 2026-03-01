@@ -71,6 +71,11 @@ except ImportError:
 # ── WebSocket client registry {user_id: [WebSocket]} ─────────────────────────
 _ws_clients: Dict[str, List[WebSocket]] = {}
 
+# ── Price & Candle cache (updated by MT5 bridge push) ─────────────────────────
+_price_cache: Dict[str, float] = {}  # {"XAUUSD": 2650.50, ...}
+_candle_cache: Dict[str, list] = {}  # {"XAUUSD_M1": [{time, open, high, low, close}, ...], ...}
+_alert_notified: Dict[str, float] = {}  # {"alert_id": last_notified_timestamp}
+
 
 async def broadcast_to_user(user_id: str, msg: dict):
     dead = []
@@ -195,8 +200,14 @@ async def lifespan(app: FastAPI):
         print("❌ Database initialization TIMEOUT (check your PostgreSQL connectivity)")
     except Exception as e:
         print(f"❌ Database initialization FAILED: {e}")
-        
+    
+    # Start alert evaluator background task
+    evaluator_task = asyncio.create_task(_alert_evaluator_loop())
+    print("🔔 Alert evaluator started")
+    
     yield
+    
+    evaluator_task.cancel()
     await mt5_manager.shutdown_all()
 
 
@@ -493,6 +504,13 @@ async def receive_mt5_push(
     if x_bridge_key != BRIDGE_KEY:
         raise HTTPException(status_code=401, detail="Invalid bridge key")
 
+    # Cache latest prices from live trades
+    for trade in payload.trades:
+        symbol = trade.get("symbol")
+        price = trade.get("priceCurrent") or trade.get("currentPrice")
+        if symbol and price:
+            _price_cache[symbol] = float(price)
+
     msg = {
         "type": payload.type,
         "trades": payload.trades,
@@ -501,6 +519,47 @@ async def receive_mt5_push(
     }
     # Re-use existing on_mt5_message handler — same as pull model
     await on_mt5_message(payload.user_id, msg)
+    return {"ok": True}
+
+
+# ── Push Prices/Candles from Bridge ───────────────────────────────────────────
+class PricePushPayload(BaseModel):
+    prices: Dict[str, float] = {}  # {"XAUUSD": 2650.50}
+    candles: Dict[str, list] = {}  # {"XAUUSD_M1": [{time,open,high,low,close}]}
+
+@app.post("/api/mt5/push-prices")
+async def receive_price_push(
+    payload: PricePushPayload,
+    x_bridge_key: str = Header(default=""),
+):
+    """Receives latest prices and candle data from MT5 Bridge."""
+    if x_bridge_key != BRIDGE_KEY:
+        raise HTTPException(status_code=401, detail="Invalid bridge key")
+    
+    _price_cache.update(payload.prices)
+    _candle_cache.update(payload.candles)
+    return {"ok": True, "cached_symbols": len(_price_cache)}
+
+
+# ── Push Token Endpoint ───────────────────────────────────────────────────────
+class PushTokenRequest(BaseModel):
+    token: str
+
+@app.post("/api/push-token")
+async def register_push_token(
+    req: PushTokenRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Register Expo push token for the current user."""
+    s = await db.get(UserSettings, user.id)
+    if not s:
+        s = UserSettings(user_id=user.id, theme="light", news_settings={})
+        db.add(s)
+    s.expo_push_token = req.token
+    s.updated_at = datetime.datetime.utcnow()
+    await db.commit()
+    print(f"🔔 Push token registered for user {user.id}: {req.token[:30]}...")
     return {"ok": True}
 
 
@@ -866,11 +925,130 @@ Format Markdown. Bold setiap poin utama. Struktur:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Alert Evaluator Background Loop ──────────────────────────────────────────
+async def _alert_evaluator_loop():
+    """Runs every 5 seconds. Evaluates alerts against cached prices and sends push notifications."""
+    COOLDOWN_SECONDS = 60  # Don't re-notify same alert within 60s
+    await asyncio.sleep(10)  # Wait for DB init
+    print("🔔 Alert evaluator loop running")
+    
+    while True:
+        try:
+            if _price_cache:  # Only evaluate if we have price data
+                async with AsyncSessionLocal() as db:
+                    # Fetch all users with alerts and push tokens
+                    result = await db.execute(
+                        select(User).options(
+                            selectinload(User.alerts),
+                            selectinload(User.settings)
+                        )
+                    )
+                    users = result.scalars().all()
+                    
+                    now = asyncio.get_event_loop().time()
+                    
+                    for user in users:
+                        if not user.settings or not user.settings.expo_push_token:
+                            continue
+                        push_token = user.settings.expo_push_token
+                        
+                        for alert_row in user.alerts:
+                            alert = alert_row.data
+                            if not alert.get("enabled", True):
+                                continue
+                            
+                            alert_id = alert_row.id
+                            
+                            # Cooldown check
+                            last_notified = _alert_notified.get(alert_id, 0)
+                            if now - last_notified < COOLDOWN_SECONDS:
+                                continue
+                            
+                            symbol = alert.get("symbol", "")
+                            alert_type = alert.get("type", "")
+                            
+                            triggered = False
+                            title = ""
+                            body = ""
+                            
+                            if alert_type == "price" and symbol in _price_cache:
+                                current_price = _price_cache[symbol]
+                                target = alert.get("targetPrice", 0)
+                                trigger = alert.get("trigger", "")
+                                
+                                if trigger == "Above" and current_price >= target:
+                                    triggered = True
+                                    title = f"🎯 {symbol} Price Target!"
+                                    body = f"{symbol} reached above {target}! Current: {current_price}"
+                                elif trigger == "Below" and current_price <= target:
+                                    triggered = True
+                                    title = f"🎯 {symbol} Price Target!"
+                                    body = f"{symbol} dropped below {target}! Current: {current_price}"
+                                elif trigger == "Crosses" and abs(current_price - target) / target < 0.001:
+                                    triggered = True
+                                    title = f"🎯 {symbol} Price Target!"
+                                    body = f"{symbol} crossed target {target}! Current: {current_price}"
+                                
+                                if alert.get("notes"):
+                                    body += f"\nNote: {alert['notes']}"
+                            
+                            elif alert_type == "candle":
+                                tf = alert.get("timeframe", "M1")
+                                cache_key = f"{symbol}_{tf}"
+                                candles = _candle_cache.get(cache_key, [])
+                                
+                                if len(candles) >= 2:
+                                    c = candles[-1]  # Current candle
+                                    close_val = c.get("close", 0)
+                                    open_val = c.get("open", 0)
+                                    high_val = c.get("high", 0)
+                                    low_val = c.get("low", 0)
+                                    
+                                    body_size = abs(close_val - open_val)
+                                    wick = (high_val - low_val) - body_size
+                                    wick_pct = (wick / (high_val - low_val) * 100) if (high_val - low_val) > 0 else 100
+                                    
+                                    # Calculate pips
+                                    pip_size = 0.01 if "JPY" in symbol.upper() else 0.0001
+                                    if any(x in symbol.upper() for x in ["XAU", "GOLD"]): pip_size = 0.1
+                                    body_pips = body_size / pip_size
+                                    
+                                    min_body = alert.get("minBodyPips", 0)
+                                    max_wick = alert.get("maxWickPercent", 100)
+                                    
+                                    if body_pips >= min_body and wick_pct <= max_wick:
+                                        direction = "Bullish" if close_val > open_val else "Bearish"
+                                        triggered = True
+                                        title = f"🚨 {symbol} {tf} Momentum!"
+                                        body = f"{direction} candle with {body_pips:.1f} pips body and {wick_pct:.0f}% wick!"
+                            
+                            if triggered:
+                                _alert_notified[alert_id] = now
+                                await send_expo_push_notification(
+                                    push_token, title, body,
+                                    {"alertId": alert_id, "symbol": symbol}
+                                )
+                                
+                                # Disable "Once" alerts
+                                if alert.get("frequency") == "Once":
+                                    alert["enabled"] = False
+                                    alert_row.data = alert
+                                    from sqlalchemy.orm.attributes import flag_modified
+                                    flag_modified(alert_row, "data")
+                                    await db.commit()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"⚠ Alert evaluator error: {e}")
+        
+        await asyncio.sleep(5)
+
+
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/api/health")
 @app.head("/api/health")
 def health_check():
-    return {"status": "ok", "version": "3.0"}
+    return {"status": "ok", "version": "3.0", "cached_prices": len(_price_cache)}
 
 
 @app.get("/")

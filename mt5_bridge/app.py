@@ -282,6 +282,45 @@ async def push_loop():
                 await push_to_backend({"user_id": user_id, "type": "live_trades", "trades": positions})
                 await push_to_backend({"user_id": user_id, "type": "account_update", "account": acc})
 
+                # 4. Push latest prices for alert evaluation
+                try:
+                    symbols = set()
+                    for p in positions:
+                        if p.get("symbol"):
+                            symbols.add(p["symbol"])
+                    
+                    if symbols:
+                        prices = {}
+                        candles = {}
+                        with _mt5_lock:
+                            for sym in symbols:
+                                tick = mt5.symbol_info_tick(sym)
+                                if tick:
+                                    prices[sym] = float(tick.bid)
+                                # Also get M1 candle for candle alerts
+                                try:
+                                    rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 2)
+                                    if rates is not None and len(rates) > 0:
+                                        candles[f"{sym}_M1"] = [
+                                            {"time": int(r["time"]), "open": float(r["open"]),
+                                             "high": float(r["high"]), "low": float(r["low"]),
+                                             "close": float(r["close"])}
+                                            for r in rates
+                                        ]
+                                except Exception:
+                                    pass
+                        
+                        if prices:
+                            headers = {"X-Bridge-Key": BRIDGE_API_KEY, "Content-Type": "application/json"}
+                            async with httpx.AsyncClient(timeout=10.0) as client:
+                                await client.post(
+                                    f"{BACKEND_URL}/api/mt5/push-prices",
+                                    json={"prices": prices, "candles": candles},
+                                    headers=headers,
+                                )
+                except Exception as e:
+                    print(f"[PUSH] Price push error: {e}")
+
             # Clean up disconnected users
             active_ids = {c.get("user_id") for c in pending}
             for uid in list(_connections.keys()):

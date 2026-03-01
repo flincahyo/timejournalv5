@@ -49,10 +49,15 @@ export default function App() {
     startup();
   }, []);
 
-  // ── Hardware back button (Android) ─────────────────────────────────────────
+  // ── Push notification + Hardware back button ────────────────────────────────
+  const [pushToken, setPushToken] = useState<string | null>(null);
+
   useEffect(() => {
     registerForPushNotificationsAsync().then((token) => {
-      if (token) console.log('[Push] Registered:', token);
+      if (token) {
+        console.log('[Push] Registered:', token);
+        setPushToken(token);
+      }
     });
 
     if (Platform.OS === 'android') {
@@ -93,6 +98,22 @@ export default function App() {
           },
           trigger: null,
         });
+      } else if (data.type === 'USER_LOGGED_IN' && pushToken && data.jwt) {
+        // Register push token with backend
+        try {
+          const backendUrl = config?.backendUrl || 'https://api.timejournal.site';
+          const res = await fetch(`${backendUrl}/api/push-token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${data.jwt}`,
+            },
+            body: JSON.stringify({ token: pushToken }),
+          });
+          if (res.ok) console.log('[Push] Token registered with backend');
+        } catch (err) {
+          console.error('[Push] Failed to register token:', err);
+        }
       }
     } catch (e) {
       console.error('[Bridge] Failed to parse WebView message:', e);
@@ -112,7 +133,20 @@ export default function App() {
           bgColor: overrideColor
         }));
       }
+
+      function checkAndSendPushToken() {
+        const jwt = localStorage.getItem('uj_token');
+        if (jwt) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'USER_LOGGED_IN',
+            jwt: jwt
+          }));
+        }
+      }
+
       sendTheme();
+      // Check for login state after a delay (login page sets token after redirect)
+      setTimeout(checkAndSendPushToken, 2000);
 
       // Watch <html> class changes (dark/light toggle)
       const themeObserver = new MutationObserver((mutations) => {
@@ -132,12 +166,16 @@ export default function App() {
         return function() {
           const result = orig.apply(this, arguments);
           setTimeout(sendTheme, 150);
+          setTimeout(checkAndSendPushToken, 1000);
           return result;
         };
       }
       history.pushState = patchHistory('pushState');
       history.replaceState = patchHistory('replaceState');
-      window.addEventListener('popstate', () => setTimeout(sendTheme, 150));
+      window.addEventListener('popstate', () => {
+        setTimeout(sendTheme, 150);
+        setTimeout(checkAndSendPushToken, 1000);
+      });
     })();
     true;
   `;
