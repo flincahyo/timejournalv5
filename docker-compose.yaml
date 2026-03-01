@@ -31,8 +31,7 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       XAI_API_KEY: ${XAI_API_KEY:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
-      # MT5 Bridge settings (set these in Coolify env vars)
-      MT5_BRIDGE_URL: ${MT5_BRIDGE_URL:-http://localhost:8765}
+      # MT5 Bridge (Push Mode) — bridge calls backend, not the other way around
       MT5_BRIDGE_API_KEY: ${MT5_BRIDGE_API_KEY:-changeme_secret_key_123}
       MT5_POLL_INTERVAL: ${MT5_POLL_INTERVAL:-10}
     volumes:
