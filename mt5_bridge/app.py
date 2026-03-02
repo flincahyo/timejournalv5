@@ -214,6 +214,8 @@ async def fetch_pending_connections() -> list:
             resp = await client.get(f"{BACKEND_URL}/api/mt5/pending-connections", headers=headers)
             if resp.status_code == 200:
                 return resp.json().get("connections", [])
+            else:
+                print(f"[PULL] Backend returned {resp.status_code}: {resp.text[:100]}")
     except Exception as e:
         print(f"[PULL] Failed to fetch pending connections: {e}")
     return []
@@ -336,11 +338,13 @@ async def push_loop():
                     if prices:
                         headers = {"X-Bridge-Key": BRIDGE_API_KEY, "Content-Type": "application/json"}
                         async with httpx.AsyncClient(timeout=10.0) as client:
-                            await client.post(
+                            res = await client.post(
                                 f"{BACKEND_URL}/api/mt5/push-prices",
                                 json={"prices": prices, "candles": candles},
                                 headers=headers,
                             )
+                            if res.status_code != 200:
+                                print(f"[PUSH] Warning: backend rejected prices ({res.status_code}): {res.text[:100]}")
             except Exception as e:
                 print(f"[PUSH] Price push error: {e}")
 
