@@ -59,7 +59,7 @@ export default function AlertsPage() {
       mounted = false;
       clearInterval(interval);
     };
-  }, [priceSymbol, activeTab, isInputFocused]);
+  }, [priceSymbol, activeTab]);
 
   const [soundPreset, setSoundPreset] = useState(SOUND_PRESETS[0].url);
   const [customSoundUrl, setCustomSoundUrl] = useState("");
@@ -244,15 +244,19 @@ export default function AlertsPage() {
                     value={targetPrice}
                     onChange={e => setTargetPrice(e.target.value)}
                     onFocus={() => setIsInputFocused(true)}
+                    onBlur={() => setIsInputFocused(false)}
                     placeholder="e.g. 2650.50"
                     className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 text-[14px] font-bold text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors pr-32"
                     required
                   />
-                  {suggestedPrice !== null && (
+                  {isInputFocused && suggestedPrice !== null && (
                     <div className="absolute right-3 top-[30px] flex items-center">
                       <button
                         type="button"
-                        onClick={() => setTargetPrice(suggestedPrice.toString())}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // Prevent focus loss on the input
+                          setTargetPrice(suggestedPrice.toString());
+                        }}
                         className="text-[11px] font-bold text-accent bg-transparent hover:opacity-75 transition-opacity px-2"
                       >
                         {suggestedPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} (Current price)
