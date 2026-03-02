@@ -42,10 +42,12 @@ export default function AlertsPage() {
         const payload = { items: [{ symbol: priceSymbol.toUpperCase(), timeframe: "M1" }] };
         // We use the same backend endpoint AlertWatcher uses to get the latest M1 tick
         const json = await apiPost<any>("/api/candles", payload);
-        if (json.data && json.data.length > 0) {
+        if (json && json.data && json.data.length > 0) {
           const candles = json.data[0].candles;
-          if (candles && candles.length > 1) {
-            if (mounted) setSuggestedPrice(candles[1].close);
+          if (candles && candles.length > 0) {
+            // The bridge might send 1 live tick or an array of history. Always take the latest parsed close.
+            const latestCandle = candles[candles.length - 1];
+            if (mounted) setSuggestedPrice(latestCandle.close);
           }
         }
       } catch (err) { }
