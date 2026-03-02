@@ -248,6 +248,8 @@ async def push_loop():
                     continue
 
                 # 2. Connect if not already connected
+                conn_err = None
+                conn_acc = None
                 with _mt5_lock:
                     current = _connections.get(user_id, {})
                     if current.get("login") != login or not mt5.terminal_info():
@@ -256,29 +258,32 @@ async def push_loop():
                         if not ok:
                             err = mt5.last_error()
                             print(f"[MT5] Connect failed for user {user_id}: {err}")
-                            await push_to_backend({
-                                "user_id": user_id,
-                                "type": "error",
-                                "message": f"MT5 connect failed: {err}"
-                            })
-                            continue
+                            conn_err = f"MT5 connect failed: {err}"
+                        else:
+                            acc = _get_account_info()
+                            _connections[user_id] = {"login": login, "server": server, "account": acc}
+                            print(f"[MT5] Connected user {user_id}: {acc.get('name')} / {acc.get('server')}")
+                            conn_acc = acc
 
-                        acc = _get_account_info()
-                        _connections[user_id] = {"login": login, "server": server, "account": acc}
-                        print(f"[MT5] Connected user {user_id}: {acc.get('name')} / {acc.get('server')}")
-
-                        # Push connection success
-                        await push_to_backend({"user_id": user_id, "type": "connected", "account": acc})
+                if conn_err:
+                    await push_to_backend({"user_id": user_id, "type": "error", "message": conn_err})
+                    continue
+                
+                if conn_acc:
+                    # Push connection success
+                    await push_to_backend({"user_id": user_id, "type": "connected", "account": conn_acc})
 
                 # 3. Fetch and push data
                 with _mt5_lock:
                     acc = _get_account_info()
                     _connections[user_id]["account"] = acc
 
-                    # All trades (history)
-                    date_from = datetime.datetime(2000, 1, 1)
+                    # All trades (history) - Limit to 30 days to prevent MT5 from hanging on massive downloads
+                    date_from = datetime.datetime.now() - datetime.timedelta(days=30)
                     date_to = datetime.datetime.now() + datetime.timedelta(hours=1)
+                    print(f"[MT5] Fetching deals for user {user_id}...")
                     deals = mt5.history_deals_get(date_from, date_to) or []
+                    print(f"[MT5] Found {len(deals)} deals.")
                     trades = [t for deal in deals if (t := _deal_to_dict(deal)) is not None]
 
                     # Live positions
