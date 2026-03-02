@@ -648,30 +648,40 @@ class CandlesRequest(BaseModel):
 
 @app.post("/api/candles")
 async def get_candles(req: CandlesRequest, user: User = Depends(get_current_user)):
-    if not MT5_AVAILABLE or not mt5_manager.is_connected(user.id):
-        return {"data": []}
-    # On Windows: direct MT5 call (candle data is per-symbol, not per-user sensitive)
-    TF_MAP = {
-        "M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15,
-        "M30": mt5.TIMEFRAME_M30, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4,
-        "D1": mt5.TIMEFRAME_D1, "W1": mt5.TIMEFRAME_W1, "MN1": mt5.TIMEFRAME_MN1,
-    }
     results = []
+    
     for item in req.items:
-        tf = TF_MAP.get(item.timeframe.upper())
-        if not tf:
+        # Check global cache from push bridge (Format: "XAUUSD_M1")
+        cache_key = f"{item.symbol}_{item.timeframe.upper()}"
+        if cache_key in _candle_cache:
+            results.append({
+                "symbol": item.symbol,
+                "timeframe": item.timeframe.upper(),
+                "candles": _candle_cache[cache_key]
+            })
             continue
-        try:
-            rates = mt5.copy_rates_from_pos(item.symbol, tf, 0, 2)
-            if rates is not None and len(rates) > 0:
-                results.append({
-                    "symbol": item.symbol, "timeframe": item.timeframe.upper(),
-                    "candles": [{"time": int(r["time"]), "open": float(r["open"]), "high": float(r["high"]),
-                                  "low": float(r["low"]), "close": float(r["close"]), "tick_volume": int(r["tick_volume"])}
-                                for r in rates],
-                })
-        except Exception as e:
-            print(f"Candle error for {item.symbol}: {e}")
+
+        # Fallback to local MT5 if available (for backwards compatibility/development)
+        if MT5_AVAILABLE and mt5_manager.is_connected(str(user.id)):
+            TF_MAP = {
+                "M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15,
+                "M30": mt5.TIMEFRAME_M30, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4,
+                "D1": mt5.TIMEFRAME_D1, "W1": mt5.TIMEFRAME_W1, "MN1": mt5.TIMEFRAME_MN1,
+            }
+            tf = TF_MAP.get(item.timeframe.upper())
+            if not tf: continue
+            try:
+                rates = mt5.copy_rates_from_pos(item.symbol, tf, 0, 2)
+                if rates is not None and len(rates) > 0:
+                    results.append({
+                        "symbol": item.symbol, "timeframe": item.timeframe.upper(),
+                        "candles": [{"time": int(r["time"]), "open": float(r["open"]), "high": float(r["high"]),
+                                      "low": float(r["low"]), "close": float(r["close"]), "tick_volume": int(r["tick_volume"])}
+                                    for r in rates],
+                    })
+            except Exception as e:
+                print(f"Candle error for {item.symbol}: {e}")
+                
     return {"data": results}
 
 
