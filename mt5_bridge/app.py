@@ -320,19 +320,28 @@ async def push_loop():
                     candles = {}
                     with _mt5_lock:
                         for sym in all_symbols:
-                            # Force MetaTrader to track this symbol in the Market Watch board
+                            actual_sym = sym
                             ok = mt5.symbol_select(sym, True)
+                            if not ok:
+                                # Try common broker suffixes (Exness Pro uses 'm', Zero uses 'z', etc.)
+                                for suffix in ['m', 'c', 'z', 'f', '.r']:
+                                    if mt5.symbol_select(sym + suffix, True):
+                                        actual_sym = sym + suffix
+                                        ok = True
+                                        break
+                                        
                             if not ok:
                                 print(f"  [MT5] Warning: symbol_select failed for {sym}. Check symbol suffix (e.g., m, z, c)!")
 
-                            tick = mt5.symbol_info_tick(sym)
+                            tick = mt5.symbol_info_tick(actual_sym)
                             if tick:
-                                prices[sym] = float(tick.bid)
+                                prices[sym] = float(tick.bid)  # Store using original name 'sym' for backend
                             else:
                                 print(f"  [MT5] Warning: tick for {sym} returned None")
+                                
                             # Also get M1 candle for candle alerts
                             try:
-                                rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 2)
+                                rates = mt5.copy_rates_from_pos(actual_sym, mt5.TIMEFRAME_M1, 0, 2)
                                 if rates is not None and len(rates) > 0:
                                     candles[f"{sym}_M1"] = [
                                         {"time": int(r["time"]), "open": float(r["open"]),

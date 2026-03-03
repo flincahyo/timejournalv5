@@ -42,10 +42,10 @@ export function AlertWatcher() {
                 // Process results
                 for (const result of json.data) {
                     const { symbol, timeframe, candles } = result;
-                    if (!candles || candles.length < 2) continue;
+                    if (!candles || candles.length === 0) continue;
 
-                    // index 1 is the current forming live candle (current tick)
-                    const liveCandle = candles[1];
+                    // The last index is the current forming live candle (current tick)
+                    const liveCandle = candles[candles.length - 1];
                     const currentPrice = liveCandle.close;
 
                     for (const alert of activeAlerts) {
