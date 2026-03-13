@@ -1,402 +1,538 @@
 """
-mt5_bridge/app.py  — PUSH Architecture v2
-==========================================
-Instead of waiting for the backend to call us (pull),
-we actively PUSH trade data to the backend API.
+MT5 Bridge - TimeJournal
+========================
+Windows-only process. Monitors the MT5 terminal and pushes all
+data to the backend REST API.
 
 Flow:
-  1. Bridge starts → reads BACKEND_URL from .env
-  2. Periodically checks for pending MT5 connections from backend
-  3. Connects to MT5 for each user, fetches trades/positions
-  4. POSTs data to backend /api/mt5/push endpoint
-  5. Backend stores and broadcasts to WebSocket users
-
-Windows setup required:
-  - Python + MetaTrader5 package
-  - .env with BACKEND_URL=https://api.timejournal.site
-  - Run: python app.py
-  - NO port forwarding or tunneling needed!
+  1. Every POLL_INTERVAL seconds, ask backend for active sessions
+     (users who have connected via frontend).
+  2. For each active session, log in to MT5 and push:
+     - account info
+     - trade history (full on first login, incremental after)
+     - live positions
+  3. Also push live prices for any symbols that have active alerts.
+  4. On disconnect, clean up and log out of MT5.
 """
 
-import asyncio
-import datetime
-import json
 import os
-import threading
+import sys
 import time
-from typing import Dict, Optional
+import logging
+import asyncio
 
-import pytz
-import uvicorn
 import httpx
+import MetaTrader5 as mt5
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
+#  Config 
 load_dotenv()
 
-try:
-    import MetaTrader5 as mt5
-    MT5_AVAILABLE = True
-except ImportError:
-    MT5_AVAILABLE = False
-    print("WARNING: MetaTrader5 not installed. Run install.bat first.")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("mt5_bridge")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# ── Config ───────────────────────────────────────────────────────────────────
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+_raw_host = os.getenv("MT5_BRIDGE_HOST", "http://localhost").rstrip("/")
+BACKEND_HOST = _raw_host if _raw_host.startswith("http") else f"http://{_raw_host}"
+BACKEND_PORT = os.getenv("MT5_BRIDGE_PORT", "8000")
+BACKEND_URL = f"{BACKEND_HOST}:{BACKEND_PORT}"
+
 BRIDGE_API_KEY = os.getenv("MT5_BRIDGE_API_KEY", "changeme_secret_key_123")
-PUSH_INTERVAL = int(os.getenv("MT5_POLL_INTERVAL", "10"))  # seconds
-HOST = os.getenv("MT5_BRIDGE_HOST", "0.0.0.0")
-PORT = int(os.getenv("MT5_BRIDGE_PORT", "8765"))
-WIB = pytz.timezone("Asia/Jakarta")
+POLL_INTERVAL = int(os.getenv("MT5_POLL_INTERVAL", "10"))  # seconds
 
-# ── Per-user connection state ─────────────────────────────────────────────────
-_connections: Dict[str, dict] = {}  # user_id -> {login, server, last_sync, account}
-_mt5_lock = threading.Lock()
+HEADERS = {"x-bridge-key": BRIDGE_API_KEY, "Content-Type": "application/json"}
 
-# ── FastAPI (kept for local health check only) ────────────────────────────────
-app = FastAPI(title="MT5 Bridge — Push Mode", version="2.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+#  Local state 
+# Tracks which users have had their full history fetched this session.
+# { user_id: { "login": int, "history_fetched": bool } }
+_session_cache: dict = {}
 
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "mode": "push",
-        "backend_url": BACKEND_URL,
-        "mt5_available": MT5_AVAILABLE,
-        "active_connections": len(_connections),
-        "time": datetime.datetime.now(tz=WIB).isoformat(),
-    }
+# Currently logged-in MT5 account login number (None = not logged in)
+_current_login: int | None = None
 
 
-# ── MT5 Data Helpers ──────────────────────────────────────────────────────────
-def _ts_to_utc_iso(ts: int) -> str:
-    return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat()
+#  MT5 helpers 
 
-
-def _ts_to_wib_iso(ts: int) -> str:
-    utc = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
-    return utc.astimezone(WIB).isoformat()
-
-
-def _detect_session(utc_dt):
-    LDN = pytz.timezone("Europe/London")
-    NY = pytz.timezone("America/New_York")
-    if utc_dt.tzinfo is None:
-        utc_dt = utc_dt.replace(tzinfo=datetime.timezone.utc)
-    lh = utc_dt.astimezone(LDN).hour
-    nh = utc_dt.astimezone(NY).hour
-    if 8 <= lh < 17 and 8 <= nh < 17: return "Overlap (LDN+NY)"
-    if 8 <= lh < 17: return "London"
-    if 8 <= nh < 17: return "New York"
-    if 0 <= utc_dt.hour < 9: return "Tokyo"
-    return "Sydney"
-
-
-def _calc_pips(symbol, open_p, close_p, direction):
-    diff = (close_p - open_p) if direction == "BUY" else (open_p - close_p)
-    s = symbol.upper()
-    if "JPY" in s: pip = 0.01
-    elif any(x in s for x in ["XAU", "GOLD"]): pip = 0.1
-    elif any(x in s for x in ["XAG", "SILVER"]): pip = 0.01
-    elif any(x in s for x in ["BTC", "BITCOIN"]): pip = 1.0
-    elif any(x in s for x in ["ETH", "ETHEREUM"]): pip = 0.1
-    elif any(x in s for x in ["NAS", "US100", "DOW", "US30"]): pip = 1.0
-    elif any(x in s for x in ["SPX", "US500"]): pip = 0.1
-    elif any(x in s for x in ["DAX", "GER"]): pip = 1.0
-    elif any(x in s for x in ["OIL", "WTI"]): pip = 0.01
-    else: pip = 0.0001
-    return round(diff / pip, 1) if pip else 0.0
-
-
-def _position_to_dict(pos) -> dict:
-    utc = datetime.datetime.fromtimestamp(pos.time, tz=datetime.timezone.utc)
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
-    dur = int((now - utc).total_seconds() * 1000)
-    direction = "BUY" if pos.type == 0 else "SELL"
-    return {
-        "id": f"live_{pos.ticket}", "ticket": pos.ticket,
-        "symbol": pos.symbol, "type": direction,
-        "lots": round(pos.volume, 2),
-        "openTime": _ts_to_utc_iso(pos.time), "openTimeWIB": _ts_to_wib_iso(pos.time),
-        "closeTime": now.isoformat(), "closeTimeWIB": datetime.datetime.now(tz=WIB).isoformat(),
-        "openPrice": pos.price_open, "closePrice": pos.price_current,
-        "sl": pos.sl, "tp": pos.tp,
-        "pnl": round(pos.profit, 2),
-        "pips": _calc_pips(pos.symbol, pos.price_open, pos.price_current, direction),
-        "swap": round(pos.swap, 2), "commission": 0.0, "rr": 0.0,
-        "session": _detect_session(utc), "setup": "Live Position", "emotion": "Neutral",
-        "status": "live", "closeType": "all", "durationMs": dur, "isIntraday": True,
-    }
-
-
-def _deal_to_dict(deal) -> Optional[dict]:
-    if not hasattr(deal, "entry") or deal.entry != 1: return None
-    if deal.type not in (0, 1): return None
-    direction = "BUY" if deal.type == 1 else "SELL"
-    open_ts = deal.time
-    open_price = deal.price
-    try:
-        pos_deals = mt5.history_deals_get(position=deal.position_id) or []
-        for d in pos_deals:
-            if d.entry == 0:
-                open_ts = d.time; open_price = d.price; break
-    except: pass
-    open_utc = datetime.datetime.fromtimestamp(open_ts, tz=datetime.timezone.utc)
-    close_utc = datetime.datetime.fromtimestamp(deal.time, tz=datetime.timezone.utc)
-    dur = max(int((close_utc - open_utc).total_seconds() * 1000), 0)
-    sym = deal.symbol or ""
-    close_type = "manually_closed"
-    reason = getattr(deal, "reason", 0)
-    comment = getattr(deal, "comment", "").lower()
-    if reason == 4 or "sl" in comment: close_type = "stopped_out"
-    elif reason == 5 or "tp" in comment: close_type = "target_hit"
-    order_info = None
-    try:
-        orders = mt5.history_orders_get(position=deal.position_id) or []
-        if orders: order_info = orders[-1]
-    except: pass
-    sl = getattr(order_info, "sl", 0.0) if order_info else 0.0
-    tp = getattr(order_info, "tp", 0.0) if order_info else 0.0
-    if close_type == "manually_closed" and order_info and deal.price > 0:
-        tol = deal.price * 0.002
-        if sl > 0 and abs(deal.price - sl) <= tol: close_type = "stopped_out"
-        elif tp > 0 and abs(deal.price - tp) <= tol: close_type = "target_hit"
-    rr = 0.0
-    if sl > 0 and tp > 0 and deal.price != 0:
-        rr = round(abs(tp - deal.price) / max(abs(deal.price - sl), 0.00001), 2)
-    return {
-        "id": str(deal.ticket), "ticket": deal.ticket, "symbol": sym, "type": direction,
-        "lots": round(deal.volume, 2),
-        "openTime": _ts_to_utc_iso(open_ts), "openTimeWIB": _ts_to_wib_iso(open_ts),
-        "closeTime": _ts_to_utc_iso(deal.time), "closeTimeWIB": _ts_to_wib_iso(deal.time),
-        "openPrice": open_price, "closePrice": deal.price,
-        "sl": sl, "tp": tp, "pnl": round(deal.profit, 2),
-        "pips": _calc_pips(sym, open_price, deal.price, direction),
-        "swap": round(deal.swap, 2), "commission": round(deal.commission, 2), "rr": rr,
-        "session": _detect_session(open_utc), "setup": "MT5 Import", "emotion": "Neutral",
-        "status": "closed", "closeType": close_type, "durationMs": dur,
-        "isIntraday": dur < 86400000,
-    }
-
-
-def _get_account_info() -> dict:
+def _account_summary() -> dict | None:
+    """Return basic account info matching frontend MT5Account type."""
     acc = mt5.account_info()
-    if not acc: return {}
+    if not acc:
+        return None
     return {
-        "login": acc.login, "name": acc.name, "server": acc.server,
-        "balance": acc.balance, "equity": acc.equity, "margin": acc.margin,
-        "freeMargin": acc.margin_free, "profit": acc.profit,
-        "currency": acc.currency, "leverage": acc.leverage,
+        "login": acc.login,
+        "name": acc.name,
+        "server": acc.server,
+        "balance": acc.balance,
+        "equity": acc.equity,
+        "profit": acc.profit,
+        "margin": acc.margin,
+        "freeMargin": acc.margin_free,
+        "leverage": acc.leverage,
+        "currency": acc.currency,
     }
 
 
-# ── Push to Backend ───────────────────────────────────────────────────────────
-async def push_to_backend(payload: dict):
-    """POST data to backend push webhook."""
-    headers = {"X-Bridge-Key": BRIDGE_API_KEY, "Content-Type": "application/json"}
+def _calc_pips(symbol: str, open_price: float, close_price: float, trade_type: str) -> float:
+    """Calculate profit/loss in pips with support for various asset classes."""
+    sym = symbol.upper()
+    
+    # Pip sizes based on common MT5 conventions
+    if any(x in sym for x in ["BTC", "BITCOIN"]):
+        pip_size = 1.0
+    elif any(x in sym for x in ["ETH", "ETHEREUM"]):
+        pip_size = 0.1
+    elif any(x in sym for x in ["NAS", "US100", "DOW", "US30", "DAX", "GER"]):
+        pip_size = 1.0
+    elif any(x in sym for x in ["SPX", "US500"]):
+        pip_size = 0.1
+    elif any(x in sym for x in ["XAU", "GOLD"]):
+        pip_size = 0.1
+    elif any(x in sym for x in ["XAG", "SILVER"]):
+        pip_size = 0.01
+    elif any(x in sym for x in ["OIL", "WTI"]):
+        pip_size = 0.01
+    elif "JPY" in sym:
+        pip_size = 0.01
+    else:
+        # Default for Forex
+        pip_size = 0.0001
+        
+    diff = close_price - open_price if trade_type == "BUY" else open_price - close_price
+    return round(diff / pip_size, 1) if pip_size else 0.0
+
+
+def _fetch_history(full: bool) -> list:
+    """Fetch closed deals. Full = all history; otherwise last 24h only."""
+    date_from = datetime.now() - timedelta(days=3650 if full else 1)
+    date_to = datetime.now() + timedelta(days=1)
+    deals = mt5.history_deals_get(date_from, date_to) or []
+
+    deals = mt5.history_deals_get(date_from, date_to) or []
+
+    trades = []
+    for d in deals:
+        # Only include closing (OUT) trades
+        if d.type not in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):
+            continue
+        if d.entry != mt5.DEAL_ENTRY_OUT:
+            continue
+
+        # When a BUY trade closes, the closing deal type is SELL  flip back
+        trade_type = "BUY" if d.type == mt5.DEAL_TYPE_SELL else "SELL"
+
+        # Retrieve open price from the matching opening deal
+        pos_deals = mt5.history_deals_get(position=d.position_id) or []
+        open_deal = None
+        for pd in pos_deals:
+            if pd.entry == mt5.DEAL_ENTRY_IN:
+                open_deal = pd
+                break
+        
+        open_price = open_deal.price if open_deal else 0.0
+        close_price = d.price
+
+        pips = _calc_pips(d.symbol, open_price, close_price, trade_type) if open_price else 0.0
+        net_pnl = d.profit + d.commission + d.swap
+
+        # Use open_deal.time if found, otherwise fallback to closing deal time
+        open_ts = open_deal.time if open_deal else d.time
+        open_time = datetime.fromtimestamp(open_ts).isoformat()
+        close_time = datetime.fromtimestamp(d.time).isoformat()
+
+        # Map MT5 deal reason to frontend CloseType
+        close_type = "manually_closed"
+        if d.reason == mt5.DEAL_REASON_SL:
+            close_type = "stopped_out"
+        elif d.reason == mt5.DEAL_REASON_TP:
+            close_type = "target_hit"
+
+        trades.append({
+            "id": str(d.ticket),
+            "symbol": d.symbol,
+            "type": trade_type,           # "BUY" or "SELL" (uppercase  matches frontend TradeDirection)
+            "lots": d.volume,              # frontend uses t.lots
+            "openPrice": open_price,
+            "closePrice": close_price,
+            "pnl": round(net_pnl, 2),      # frontend calcStats uses t.pnl
+            "profit": round(d.profit, 2),  # raw profit before fees
+            "commission": d.commission,
+            "swap": d.swap,
+            "pips": pips,
+            "openTime": open_time,
+            "closeTime": close_time,
+            "status": "closed",            # lowercase matches TradeStatus type
+            "session": "Unknown",
+            "closeType": close_type,
+        })
+    return trades
+
+
+def _fetch_positions() -> list | None:
+    """Fetch all currently open positions and pending orders."""
+    p_data = mt5.positions_get()
+    o_data = mt5.orders_get()
+    
+    # If both are None, MT5 terminal might be busy or disconnected
+    if p_data is None and o_data is None:
+        return None
+        
+    live_items = []
+    
+    # 1. Open Positions
+    for p in p_data or []:
+        live_items.append({
+            "id": str(p.ticket),
+            "ticket": p.ticket,
+            "symbol": p.symbol,
+            "type": "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL",
+            "lots": p.volume,
+            "openPrice": p.price_open,
+            "currentPrice": p.price_current,
+            "closePrice": p.price_current, # For frontend compatibility
+            "pnl": round(p.profit, 2),
+            "profit": round(p.profit, 2),
+            "openTime": datetime.fromtimestamp(p.time).isoformat(),
+            "status": "live",
+            "session": "Unknown",
+            "sl": p.sl,
+            "tp": p.tp,
+        })
+        
+    # 2. Pending Orders
+    for o in o_data or []:
+        # Map MT5 order types to string
+        otype = "UNKNOWN"
+        if o.type == mt5.ORDER_TYPE_BUY_LIMIT: otype = "BUY LIMIT"
+        elif o.type == mt5.ORDER_TYPE_SELL_LIMIT: otype = "SELL LIMIT"
+        elif o.type == mt5.ORDER_TYPE_BUY_STOP: otype = "BUY STOP"
+        elif o.type == mt5.ORDER_TYPE_SELL_STOP: otype = "SELL STOP"
+        elif o.type == mt5.ORDER_TYPE_BUY_STOP_LIMIT: otype = "BUY STOP LIMIT"
+        elif o.type == mt5.ORDER_TYPE_SELL_STOP_LIMIT: otype = "SELL STOP LIMIT"
+        elif o.type == mt5.ORDER_TYPE_BUY: otype = "BUY"
+        elif o.type == mt5.ORDER_TYPE_SELL: otype = "SELL"
+        
+        live_items.append({
+            "id": str(o.ticket),
+            "ticket": o.ticket,
+            "symbol": o.symbol,
+            "type": otype,
+            "lots": o.volume_current,
+            "openPrice": o.price_open,      # Target Price
+            "currentPrice": o.price_current,   # Current Market Price
+            "closePrice": o.price_current,
+            "pips": 0.0,
+            "pnl": 0.0,
+            "profit": 0.0,
+            "openTime": datetime.fromtimestamp(o.time_setup).isoformat(),
+            "status": "pending",
+            "session": "Unknown",
+            "sl": o.sl,
+            "tp": o.tp,
+        })
+        
+    return live_items
+
+
+def _fetch_prices(symbols: list[str]) -> dict:
+    """Return bid/ask for each symbol. Enables symbol in MT5 market watch if needed."""
+    prices = {}
+    for sym in symbols:
+        if not mt5.symbol_select(sym, True):
+            continue
+        tick = mt5.symbol_info_tick(sym)
+        if tick:
+            prices[sym] = {
+                "bid": tick.bid,
+                "ask": tick.ask,
+                "time": tick.time,
+            }
+    return prices
+
+
+def _login(login: int, password: str, server: str) -> bool:
+    """Log in to MT5. Returns True on success."""
+    global _current_login
+    mt5.shutdown()
+    ok = mt5.initialize(login=login, password=password, server=server)
+    if ok:
+        _current_login = login
+        log.info(f"[MT5] Logged in as {login} on {server}")
+    else:
+        _current_login = None
+        log.error(f"[MT5] Login failed for {login}: {mt5.last_error()}")
+    return ok
+
+
+def _ensure_terminal_alive() -> bool:
+    """Check if MT5 terminal process is responsive."""
+    info = mt5.terminal_info()
+    return info is not None
+
+
+#  HTTP helpers 
+
+async def _push(client: httpx.AsyncClient, payload: dict) -> bool:
+    """POST a payload to /api/mt5/push. Returns True on success."""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{BACKEND_URL}/api/mt5/push", json=payload, headers=headers)
-            if resp.status_code != 200:
-                print(f"[PUSH] Backend returned {resp.status_code}: {resp.text[:100]}")
+        resp = await client.post(
+            f"{BACKEND_URL}/api/mt5/push",
+            json=payload,
+            headers=HEADERS,
+            timeout=8.0,
+        )
+        resp.raise_for_status()
+        return True
     except Exception as e:
-        print(f"[PUSH] Failed to push to backend: {e}")
+        log.warning(f"[push] Failed: {e}")
+        return False
 
 
-async def fetch_pending_connections() -> list:
-    """Ask backend which users should have MT5 connections active."""
-    headers = {"X-Bridge-Key": BRIDGE_API_KEY}
+async def _push_prices(client: httpx.AsyncClient, prices: dict, candles: dict) -> bool:
+    """POST price and candle data to /api/mt5/push-prices."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{BACKEND_URL}/api/mt5/pending-connections", headers=headers)
-            if resp.status_code == 200:
-                return resp.json().get("connections", [])
-            else:
-                print(f"[PULL] Backend returned {resp.status_code}: {resp.text[:100]}")
+        resp = await client.post(
+            f"{BACKEND_URL}/api/mt5/push-prices",
+            json={"prices": prices, "candles": candles},
+            headers=HEADERS,
+            timeout=8.0,
+        )
+        resp.raise_for_status()
+        return True
     except Exception as e:
-        print(f"[PULL] Failed to fetch pending connections: {e}")
-    return []
+        log.warning(f"[push-prices] Failed: {e}")
+        return False
 
 
-# ── Push Loop ─────────────────────────────────────────────────────────────────
-async def push_loop():
-    """Main async loop: sync MT5 state and push to backend."""
-    print(f"[PUSH] Starting push loop → {BACKEND_URL} (interval: {PUSH_INTERVAL}s)")
-    await asyncio.sleep(3)  # brief startup delay
+async def _get_pending_sessions(client: httpx.AsyncClient) -> list:
+    """Ask backend which users want an active MT5 connection."""
+    try:
+        resp = await client.get(
+            f"{BACKEND_URL}/api/mt5/pending-connections",
+            headers=HEADERS,
+            timeout=8.0,
+        )
+        resp.raise_for_status()
+        return resp.json().get("connections", [])
+    except Exception as e:
+        log.warning(f"[pending] Could not fetch sessions: {e}")
+        return []
 
+
+async def _get_alert_symbols(client: httpx.AsyncClient) -> list[str]:
+    """Ask backend for symbols that need live price monitoring."""
+    try:
+        resp = await client.get(
+            f"{BACKEND_URL}/api/mt5/alert-symbols",
+            headers=HEADERS,
+            timeout=8.0,
+        )
+        resp.raise_for_status()
+        return resp.json().get("symbols", [])
+    except Exception as e:
+        log.debug(f"[alert-symbols] {e}")
+        return []
+
+
+#  Main loop 
+
+async def main_loop():
+    log.info(f"[ROCKET] MT5 Bridge starting  backend: {BACKEND_URL}  interval: {POLL_INTERVAL}s")
+
+    async with httpx.AsyncClient() as client:
+        # Start the fast price-pushing loop in the background (runs every 1.5s)
+        asyncio.create_task(_price_loop(client))
+        
+        # Main cycle (trades, account info) runs every POLL_INTERVAL (10s)
+        while True:
+            try:
+                await _cycle(client)
+            except Exception as e:
+                log.error(f"[cycle] Unhandled error: {e}")
+            await asyncio.sleep(POLL_INTERVAL)
+
+
+import websockets
+import json
+
+async def _price_loop(client: httpx.AsyncClient):
+    """Fast loop to push current prices and candles via persistent WebSocket."""
+    ws_host = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = f"{ws_host}/ws/bridge/prices?token={BRIDGE_API_KEY}"
+    
     while True:
         try:
-            # Ensure MT5 is running locally so we can grab global prices
-            if not mt5.initialize():
-                await asyncio.sleep(PUSH_INTERVAL)
-                continue
-
-            # 1. Get list of users who need MT5 connections from backend
-            pending = await fetch_pending_connections()
-            all_symbols = set()
-
-            for conn_info in pending:
-                user_id = conn_info.get("user_id")
-                login = conn_info.get("login")
-                password = conn_info.get("password")
-                server = conn_info.get("server")
-
-                if not all([user_id, login, password, server]):
-                    continue
-
-                # 2. Connect if not already connected
-                conn_err = None
-                conn_acc = None
-                with _mt5_lock:
-                    current = _connections.get(user_id, {})
-                    if current.get("login") != login or not mt5.terminal_info():
-                        mt5.shutdown()
-                        ok = mt5.initialize(login=login, password=password, server=server)
-                        if not ok:
-                            err = mt5.last_error()
-                            print(f"[MT5] Connect failed for user {user_id}: {err}")
-                            conn_err = f"MT5 connect failed: {err}"
-                        else:
-                            acc = _get_account_info()
-                            _connections[user_id] = {"login": login, "server": server, "account": acc}
-                            print(f"[MT5] Connected user {user_id}: {acc.get('name')} / {acc.get('server')}")
-                            conn_acc = acc
-
-                if conn_err:
-                    await push_to_backend({"user_id": user_id, "type": "error", "message": conn_err})
-                    continue
-                
-                if conn_acc:
-                    # Push connection success
-                    await push_to_backend({"user_id": user_id, "type": "connected", "account": conn_acc})
-
-                # 3. Fetch and push data
-                with _mt5_lock:
-                    acc = _get_account_info()
-                    _connections[user_id]["account"] = acc
-
-                    # All trades (history) - Limit to 1 day to prevent MT5 from hanging on massive downloads
-                    # (This loop runs every 10 seconds, pulling 500+ trades takes 50s and blocks live price alerts)
-                    date_from = datetime.datetime.now() - datetime.timedelta(days=1)
-                    date_to = datetime.datetime.now() + datetime.timedelta(hours=1)
-                    print(f"[MT5] Fetching deals for user {user_id} (Last 24 hours)...")
-                    deals = mt5.history_deals_get(date_from, date_to) or []
-                    print(f"[MT5] Found {len(deals)} recent deals.")
-                    trades = [t for deal in deals if (t := _deal_to_dict(deal)) is not None]
-
-                    # Live positions
-                    pos_list = mt5.positions_get() or []
-                    positions = [_position_to_dict(p) for p in pos_list]
-
-                # Push all data
-                await push_to_backend({"user_id": user_id, "type": "all_trades", "trades": trades})
-                await push_to_backend({"user_id": user_id, "type": "live_trades", "trades": positions})
-                await push_to_backend({"user_id": user_id, "type": "account_update", "account": acc})
-                
-                # Watch these primary global symbols by default so the web UI ALWAYS has instant live prices
-                all_symbols = {"XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "US30", "NAS100", "US100", "SPX500", "BTCUSD", "ETHUSD"}
-                
-                # Accumulate live position symbols for global tracking
-                for p in positions:
-                    if p.get("symbol"):
-                        all_symbols.add(p["symbol"])
-
-            # 4. Push latest prices for alert evaluation (GLOBAL, outside user loop)
-            try:
-                # Optionally fetch obscure alert symbols from backend. If this fails, we STILL have the core list above!
-                try:
-                    headers = {"X-Bridge-Key": BRIDGE_API_KEY}
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        res = await client.get(f"{BACKEND_URL}/api/mt5/alert-symbols", headers=headers)
-                        if res.status_code == 200:
-                            alert_syms = res.json().get("symbols", [])
-                            all_symbols.update(alert_syms)
-                except Exception as e:
-                    print(f"  [MT5] (Soft Warning) Could not fetch custom alert symbols: {e}")
+            async with websockets.connect(ws_url) as ws:
+                log.info(f"[WS] Connected to {ws_url} for price streaming")
+                while True:
+                    if _current_login is not None:
+                        # Re-fetch alert symbols every 10s or so. For simplicity, fetch every loop 
+                        # (GET overhead is small, but can be optimized later).
+                        alert_symbols = await _get_alert_symbols(client)
+                        if alert_symbols:
+                            prices = _fetch_prices(alert_symbols)
+                            
+                            candles = {}
+                            for sym in alert_symbols:
+                                for tf_name, tf_const in [("M1", mt5.TIMEFRAME_M1), ("M5", mt5.TIMEFRAME_M5)]:
+                                    rates = mt5.copy_rates_from_pos(sym, tf_const, 0, 3)
+                                    if rates is not None and len(rates) > 0:
+                                        candles[f"{sym}_{tf_name}"] = [
+                                            {
+                                                "time": int(r["time"]),
+                                                "open": float(r["open"]),
+                                                "high": float(r["high"]),
+                                                "low": float(r["low"]),
+                                                "close": float(r["close"]),
+                                            }
+                                            for r in rates
+                                        ]
+        
+                            if prices:
+                                payload = json.dumps({"prices": prices, "candles": candles})
+                                await ws.send(payload)
                     
-                # We no longer rely EXCLUSIVELY on the backend to tell us what to watch.
-                if all_symbols:
-                    print(f"[PUSH] Evaluating symbols: {all_symbols}")
-                    prices = {}
-                    candles = {}
-                    with _mt5_lock:
-                        for sym in all_symbols:
-                            actual_sym = sym
-                            ok = mt5.symbol_select(sym, True)
-                            if not ok:
-                                # Try common broker suffixes (Exness Pro uses 'm', Zero uses 'z', etc.)
-                                for suffix in ['m', 'c', 'z', 'f', '.r']:
-                                    if mt5.symbol_select(sym + suffix, True):
-                                        actual_sym = sym + suffix
-                                        ok = True
-                                        break
-                                        
-                            if not ok:
-                                print(f"  [MT5] Warning: symbol_select failed for {sym}. Check symbol suffix (e.g., m, z, c)!")
-
-                            tick = mt5.symbol_info_tick(actual_sym)
-                            if tick:
-                                prices[sym] = float(tick.bid)  # Store using original name 'sym' for backend
-                            else:
-                                print(f"  [MT5] Warning: tick for {sym} returned None")
-                                
-                            # Also get M1 candle for candle alerts
-                            try:
-                                rates = mt5.copy_rates_from_pos(actual_sym, mt5.TIMEFRAME_M1, 0, 2)
-                                if rates is not None and len(rates) > 0:
-                                    candles[f"{sym}_M1"] = [
-                                        {"time": int(r["time"]), "open": float(r["open"]),
-                                         "high": float(r["high"]), "low": float(r["low"]),
-                                         "close": float(r["close"])}
-                                        for r in rates
-                                    ]
-                                    # Also add latest candle close as fallback price
-                                    if sym not in prices:
-                                        prices[sym] = float(rates[-1]["close"])
-                            except Exception:
-                                pass
+                    await asyncio.sleep(1.0) # Faster 1.0s stream since WS is cheap
                     
-                    if prices:
-                        print(f"[PUSH] Pushing prices for: {list(prices.keys())}")
-                        headers = {"X-Bridge-Key": BRIDGE_API_KEY, "Content-Type": "application/json"}
-                        async with httpx.AsyncClient(timeout=10.0) as client:
-                            res = await client.post(
-                                f"{BACKEND_URL}/api/mt5/push-prices",
-                                json={"prices": prices, "candles": candles},
-                                headers=headers,
-                            )
-                            if res.status_code != 200:
-                                print(f"[PUSH] Warning: backend rejected prices ({res.status_code}): {res.text[:100]}")
-                    else:
-                        print(f"[PUSH] No valid prices extracted for {all_symbols}. Skipping push.")
-            except Exception as e:
-                print(f"[PUSH] Price push error: {e}")
-
-            # Clean up disconnected users
-            active_ids = {c.get("user_id") for c in pending}
-            for uid in list(_connections.keys()):
-                if uid not in active_ids:
-                    del _connections[uid]
-                    print(f"[MT5] Removed stale connection for user {uid}")
-
+        except websockets.exceptions.ConnectionClosed:
+            log.warning("[WS] Disconnected from backend. Retrying in 5s...")
+            await asyncio.sleep(5.0)
         except Exception as e:
-            print(f"[PUSH] Loop error: {e}")
+            log.warning(f"[_price_loop] WS Error: {e}")
+            await asyncio.sleep(5.0)
 
-        await asyncio.sleep(PUSH_INTERVAL)
+
+async def _cycle(client: httpx.AsyncClient):
+    global _current_login, _session_cache
+
+    #  Step 1: Get sessions the backend wants us to serve 
+    sessions = await _get_pending_sessions(client)
+
+    #  Step 2: Detect disconnected users and clean up 
+    active_user_ids = {s["user_id"] for s in sessions}
+    removed = set(_session_cache.keys()) - active_user_ids
+    for uid in removed:
+        log.info(f"[-] User {uid} disconnected  clearing session cache")
+        del _session_cache[uid]
+
+    # If no active sessions, shut down MT5 terminal to free resources
+    if not sessions:
+        if _ensure_terminal_alive():
+            log.info("[MT5] No active sessions  shutting down terminal")
+            mt5.shutdown()
+            _current_login = None
+        return
+
+    #  Step 3: Ensure MT5 terminal is alive 
+    if not _ensure_terminal_alive():
+        if not mt5.initialize():
+            log.error("[MT5] Terminal is not running or inaccessible")
+            return
+
+    #  Step 4: Process active session 
+    # NOTE: MT5 only supports one active login at a time on Windows.
+    # If there are multiple active users (e.g. local testing), we ONLY process 
+    # the last requested session to prevent the terminal from ping-ponging between accounts.
+    if sessions:
+        session = sessions[-1]
+        user_id = session["user_id"]
+        req_login = int(session["login"])
+        req_pw = session["password"]
+        req_server = session["server"]
+
+        cache = _session_cache.get(user_id, {})
+
+        # Login if needed (different account or not logged in yet)
+        if req_login != _current_login:
+            success = _login(req_login, req_pw, req_server)
+            if not success:
+                await _push(client, {
+                    "user_id": user_id,
+                    "type": "error",
+                    "message": f"MT5 login failed: {mt5.last_error()}",
+                })
+                return
+            cache["history_fetched"] = False  # Need full re-sync on new login
+
+        acc = _account_summary()
+        if not acc:
+            log.warning(f"[{user_id}] Could not read account info")
+            return
+
+        # Push connection confirmation + account state
+        await _push(client, {"user_id": user_id, "type": "connected", "account": acc})
+
+        # Push full symbol list once per session (market watch symbols)
+        if not cache.get("symbols_pushed", False):
+            raw_symbols = mt5.symbols_get() or []
+            log.info(f"[{user_id}] Got {len(raw_symbols)} raw symbols from mt5.symbols_get()")
+            symbol_names = sorted(set(
+                s.name for s in raw_symbols if hasattr(s, 'name') and s.name
+            ))
+            log.info(f"[{user_id}] Extracted {len(symbol_names)} valid symbol names")
+            if symbol_names:
+                ok = await _push(client, {
+                    "user_id": user_id,
+                    "type": "symbols",
+                    "symbols": symbol_names,
+                })
+                if ok:
+                    cache["symbols_pushed"] = True
+                    log.info(f"[{user_id}] Pushed {len(symbol_names)} symbols to backend")
+                else:
+                    log.warning(f"[{user_id}] Failed to push symbols to backend")
+
+        # Fetch history  full on first connection, incremental after
+        need_full = not cache.get("history_fetched", False)
+        history = _fetch_history(full=need_full)
+        positions = _fetch_positions()
+
+        if need_full:
+            log.info(f"[{user_id}] Full history: {len(history)} trades")
+            ok = await _push(client, {
+                "user_id": user_id,
+                "type": "all_trades",
+                "trades": history,
+            })
+            # Only mark as fetched if backend confirmed receipt  if push failed
+            # (e.g. backend was restarting), retry full sync on next cycle
+            if ok:
+                cache["history_fetched"] = True
+                log.info(f"[{user_id}] Full history push successful ({len(history)} trades)")
+            else:
+                log.warning(f"[{user_id}] Full history push failed  will retry next cycle")
+        else:
+            # Only push if there are new trades since last cycle
+            if history:
+                await _push(client, {
+                    "user_id": user_id,
+                    "type": "recent_trades",
+                    "trades": history,
+                })
+
+        # Always push live positions and latest account info
+        if positions is not None:
+            await _push(client, {"user_id": user_id, "type": "live_trades", "trades": positions})
+        await _push(client, {"user_id": user_id, "type": "account_update", "account": acc})
+
+        # Update local cache
+        cache["login"] = req_login
+        _session_cache[user_id] = cache
+
+    #  Step 5: (Moved to _price_loop for faster sync) 
+    pass
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(push_loop())
-
+#  Entry point 
 
 if __name__ == "__main__":
-    print(f"🚀 MT5 Bridge (Push Mode) starting")
-    print(f"🌐 Pushing to backend: {BACKEND_URL}")
-    print(f"⏱  Push interval: {PUSH_INTERVAL}s")
-    print(f"📊 MT5 Available: {MT5_AVAILABLE}")
-    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        log.info("MT5 Bridge shutting down gracefully...")
+        mt5.shutdown()
+        sys.exit(0)

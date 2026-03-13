@@ -1,337 +1,303 @@
 ﻿"use client";
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useFilteredTrades } from "@/store";
 import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell, ReferenceLine } from "recharts";
+import {
+  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell, ReferenceLine,
+  LineChart, Line, AreaChart, Area, ComposedChart, PieChart, Pie
+} from "recharts";
+import {
+  TrendingUp, TrendingDown, Target, Zap, Clock, Calendar,
+  BarChart3, PieChart as PieIcon, Activity, Flame, Award, ShieldAlert,
+  ChevronDown, Filter, Info, ArrowUpRight, ArrowDownRight
+} from "lucide-react";
 
-type SortKey = "pnl" | "winRate" | "count";
-type SortDir = "asc" | "desc";
+// --- Components ---
 
-function MiniProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
+function MetricCard({ title, value, subValue, trend, icon: Icon, color, prefix = "" }: any) {
   return (
-    <div className="h-1 bg-surface3 rounded-sm overflow-hidden mt-1.5">
-      <div className="h-full rounded-sm transition-all duration-300 ease-out" style={{ background: color, width: `${Math.min((Math.abs(value) / max) * 100, 100)}%` }} />
-    </div>
-  );
-}
-
-function MiniStat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="bg-surface2 rounded-[16px] p-3.5">
-      <div className="text-[10px] font-bold text-text3 uppercase tracking-[.05em] mb-1.5">{label}</div>
-      <div className="text-[16px] font-bold tracking-[-.3px]" style={{ color }}>{value}</div>
-    </div>
-  );
-}
-
-function AnalysisCard({ title, wins, losses, pnl, avgWin, avgLoss, avgPnl, winColor, lossColor }: {
-  title: string; wins: number; losses: number; pnl: number; avgWin: number; avgLoss: number; avgPnl: number;
-  winColor?: string; lossColor?: string;
-}) {
-  const total = wins + losses;
-  const wr = total ? (wins / total) * 100 : 0;
-  const wc = winColor ?? "#3b82f6";
-  const lc = lossColor ?? "#f59e0b";
-  return (
-    <div className="card p-4">
-      <div className="text-[12px] font-bold text-text mb-3">{title}</div>
-      <div className="mb-2">
-        <div className="flex items-end justify-between mb-1">
-          <div className="text-[10px] text-text3 font-medium uppercase tracking-[0.04em]">Win Rate</div>
-          <div className="text-[15px] font-extrabold tracking-[-0.4px] leading-none" style={{ color: wr >= 50 ? wc : lc }}>{wr.toFixed(1)}%</div>
+    <div className="card group hover:scale-[1.02] transition-all duration-300 p-4 bg-surface/30 border-border/10">
+      <div className="flex justify-between items-start mb-3">
+        <div className={`p-2 rounded-xl bg-surface2 border border-border/10 text-text3 group-hover:text-text group-hover:border-border transition-all`}>
+          <Icon size={16} style={{ color }} />
         </div>
-        <div className="h-[4px] bg-surface3 rounded-[3px] overflow-hidden mb-1.5 relative">
-          <div className="absolute left-0 top-0 h-full rounded-[3px] transition-all duration-300 ease-out" style={{ width: `${wr}%`, background: wc }} />
-        </div>
-        <div className="flex justify-between text-[9px] font-medium text-text3 uppercase tracking-[0.04em] mt-1.5">
-          <span><b className="font-bold text-[10px]" style={{ color: wc }}>{wins}</b> Wins</span>
-          <span><b className="font-bold text-[10px]" style={{ color: lc }}>{losses}</b> Losses</span>
-        </div>
+        {trend && (
+          <div className={`flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${trend >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
+            {trend >= 0 ? <ArrowUpRight size={8} /> : <ArrowDownRight size={8} />}
+            {Math.abs(trend)}%
+          </div>
+        )}
       </div>
-      <div className="h-px bg-border my-2.5" />
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <div className="text-text3 text-[9px] uppercase tracking-[0.04em] mb-0.5">PNL</div>
-          <div className="font-bold text-[14px] tracking-[-0.3px]" style={{ color: pnl >= 0 ? wc : lc }}>{fmtUSD(pnl)}</div>
-          <div className="text-[9px] text-text3 mt-0.5 uppercase tracking-[0.04em]">{fmtUSD(avgPnl)} Avg</div>
-        </div>
-        <div>
-          <div className="text-text3 text-[9px] uppercase tracking-[0.04em] mb-0.5">Avg Win</div>
-          <div className="font-bold text-[12px]" style={{ color: wc }}>{fmtUSD(avgWin)}</div>
-          <div className="text-text3 text-[9px] uppercase tracking-[0.04em] mt-1 mb-0.5">Avg Loss</div>
-          <div className="font-bold text-[12px]" style={{ color: lc }}>-{fmtUSD(avgLoss)}</div>
-        </div>
+      <div className="text-[9px] font-bold text-text3 uppercase tracking-[0.1em] mb-0.5 opacity-60">{title}</div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[22px] font-extrabold tracking-[-0.6px] text-text leading-none">{value}</span>
+        {subValue && <span className="text-[10px] font-bold text-text3 opacity-40">{subValue}</span>}
       </div>
     </div>
   );
 }
+
+function AnalysisGrid({ title, icon: Icon, children }: any) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 px-1">
+        <Icon size={16} className="text-accent opacity-70" />
+        <h3 className="text-[13px] font-black uppercase tracking-widest text-text opacity-80">{title}</h3>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function MiniProgressBar({ value, max, color, label, icon: Icon }: any) {
+  const percent = Math.min((value / max) * 100, 100);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex justify-between items-center px-0.5">
+        <div className="flex items-center gap-1.5">
+          {Icon && <Icon size={10} className="text-text3 opacity-50" />}
+          <span className="text-[10px] font-bold text-text3 uppercase tracking-wider">{label}</span>
+        </div>
+        <span className="text-[11px] font-black tracking-tight" style={{ color }}>{value.toFixed(1)}%</span>
+      </div>
+      <div className="h-1.5 bg-surface3 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ background: color, width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// --- Main Page ---
 
 export default function AnalyticsPage() {
   const { filtered: trades, stats } = useFilteredTrades();
-  const [sortKey, setSortKey] = useState<SortKey>("pnl");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [sortKey, setSortKey] = useState<"pnl" | "winRate" | "count">("pnl");
 
   const symData = useMemo(() => {
-    return Object.values(stats.symbolStats).sort((a, b) => {
-      const av = a[sortKey === "winRate" ? "winRate" : sortKey === "count" ? "count" : "pnl"];
-      const bv = b[sortKey === "winRate" ? "winRate" : sortKey === "count" ? "count" : "pnl"];
-      return sortDir === "desc" ? bv - av : av - bv;
-    });
-  }, [stats.symbolStats, sortKey, sortDir]);
+    return (stats.symbolStats || []).slice(0, 8);
+  }, [stats.symbolStats]);
 
-  const maxPnl = Math.max(...symData.map(s => Math.abs(s.pnl)), 1);
-  const maxCount = Math.max(...symData.map(s => s.count), 1);
-
-  const closed = trades.filter(t => t.status === "closed");
-  const longs = closed.filter(t => t.type === "BUY");
-  const shorts = closed.filter(t => t.type === "SELL");
-  const longWins = longs.filter(t => t.pnl > 0);
-  const longLoss = longs.filter(t => t.pnl < 0);
-  const shortWins = shorts.filter(t => t.pnl > 0);
-  const shortLoss = shorts.filter(t => t.pnl < 0);
-  const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-
-  const bestTrade = Math.max(...closed.map(t => t.pnl), 0);
-  const worstTrade = Math.min(...closed.map(t => t.pnl), 0);
-
-  const tooltip = {
-    contentStyle: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }
+  const tooltipStyles = {
+    contentStyle: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 11, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.5)" },
+    itemStyle: { padding: "2px 0" },
+    cursor: { fill: "var(--surface3)", opacity: 0.4 }
   };
 
-  const sortLabels: Record<SortKey, string> = { pnl: "PNL", winRate: "Win rate", count: "Number of Trades" };
+  const SESSION_COLORS: any = {
+    "Tokyo": "#8b5cf6",
+    "Sydney": "#6366f1",
+    "London": "#3b82f6",
+    "Overlap (LDN+NY)": "#f59e0b",
+    "New York": "#10b981",
+  };
+
+  if (!trades.length) {
+    return (
+      <div className="h-[80vh] flex flex-col items-center justify-center fade-in text-center p-10">
+        <div className="w-20 h-20 bg-surface2 rounded-3xl flex items-center justify-center mb-6 border border-border/20">
+          <Activity size={32} className="text-accent opacity-20" />
+        </div>
+        <h2 className="text-xl font-black text-text mb-2">No Trading DNA Found</h2>
+        <p className="text-text3 text-[13px] max-w-sm opacity-60">Complete your first few trades to unlock deep behavioral analytics and edge performance insights.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="fade-in flex flex-col gap-3 p-5 pb-10">
+    <div className="fade-in p-6 lg:p-8 flex flex-col gap-10 max-w-[1600px] mx-auto pb-32">
 
-      {/* Quick Edge Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="card py-3 px-4 border-l-[3px] border-l-accent2">
-          <div className="text-[10px] font-bold text-text3 mb-1 uppercase tracking-[0.05em] flex items-center gap-1">Profit Factor <span className="text-border2 text-[9px] cursor-help" title="Gross Profit / Gross Loss">ⓘ</span></div>
-          <div className="text-[18px] font-extrabold tracking-[-0.5px] text-text flex items-end gap-1">
-            {stats.profitFactor.toFixed(2)}
-            <span className="text-[10px] text-text3 font-medium mb-[3px]">x</span>
-          </div>
-        </div>
-        <div className="card py-3 px-4 border-l-[3px] border-l-green">
-          <div className="text-[10px] font-bold text-text3 mb-1 uppercase tracking-[0.05em] flex items-center gap-1">Expectancy <span className="text-border2 text-[9px] cursor-help" title="Average expected PnL per trade">ⓘ</span></div>
-          <div className={`text-[18px] font-extrabold tracking-[-0.5px] ${stats.expectedValue >= 0 ? 'text-green' : 'text-red'}`}>
-            {fmtUSD(stats.expectedValue)}
-          </div>
-        </div>
-        <div className="card py-3 px-4 border-l-[3px] border-l-blue-500">
-          <div className="text-[10px] font-bold text-text3 mb-1 uppercase tracking-[0.05em] flex items-center gap-1">Average RR <span className="text-border2 text-[9px] cursor-help" title="Average Risk/Reward Ratio per trade">ⓘ</span></div>
-          <div className="text-[18px] font-extrabold tracking-[-0.5px] text-text flex items-end gap-1">
-            <span className="text-[10px] text-text3 font-medium mb-[3px]">1:</span>
-            {stats.avgRR.toFixed(2)}
-          </div>
-        </div>
-        <div className="card py-3 px-4 flex flex-col justify-center">
-          <div className="flex justify-between items-center text-[11px] font-bold mb-1.5 border-b border-border/50 pb-1">
-            <span className="text-text3 uppercase tracking-[0.05em] text-[9px]">Max Win Streak</span>
-            <span className="text-green text-[13px]">{stats.longestWinStreak}</span>
-          </div>
-          <div className="flex justify-between items-center text-[11px] font-bold">
-            <span className="text-text3 uppercase tracking-[0.05em] text-[9px]">Max Loss Streak</span>
-            <span className="text-red text-[13px]">{stats.longestLossStreak}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Stats detail grid ─────────────────────────── */}
-      <div className="card p-5 overflow-x-auto scrollbar-none">
-        <div className="text-[12px] font-bold text-text mb-3 min-w-max">Statistik Lengkap</div>
-        <div className="flex md:grid md:grid-cols-5 gap-2.5 min-w-max pb-2">
-          <MiniStat label="Avg Win" value={`+$${stats.avgWin.toFixed(2)}`} color="#4f81c7" />
-          <MiniStat label="Avg Loss" value={`-$${stats.avgLoss.toFixed(2)}`} color="#b0793a" />
-          <MiniStat label="Best Trade" value={`+$${stats.bestTrade.toFixed(2)}`} color="#5b6ec9" />
-          <MiniStat label="Worst Trade" value={`-$${Math.abs(stats.worstTrade).toFixed(2)}`} color="#9f5c2a" />
-          <MiniStat label="Total Fees" value={`-$${Math.abs(stats.totalFees).toFixed(2)}`} color="#64748b" />
-          <MiniStat label="Win Streak" value={`${stats.longestWinStreak}`} color="#2e7db5" />
-          <MiniStat label="Loss Streak" value={`${stats.longestLossStreak}`} color="#8b5ba1" />
-          <MiniStat label="Avg R:R" value={`${stats.avgRR.toFixed(2)}×`} color={stats.avgRR >= 1 ? "#4f81c7" : "#64748b"} />
-          <MiniStat label="Best Symbol" value={stats.bestSymbol} color="#2a8c6e" />
-          <MiniStat label="Avg Hold" value={formatDuration(stats.avgTradeTimeMs).str} color="#6b5ea8" />
-        </div>
-      </div>
-
-      {/* Symbol Performance */}
-      <div className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-[12.5px] font-bold text-text">Symbol Performance</div>
-          <div className="flex gap-2 relative">
-            {/* Sort Key Dropdown */}
-            <div className="relative">
-              <button onClick={() => setShowDropdown(d => !d)} className="flex items-center gap-1 py-1 px-3 bg-surface2 border border-border rounded-lg text-text2 text-[11px] font-medium">
-                {sortLabels[sortKey]} <span>▲</span>
-              </button>
-              {showDropdown && (
-                <div className="absolute top-[110%] right-0 bg-surface border border-border rounded-lg z-[100] min-w-[140px] shadow-s2">
-                  {(Object.keys(sortLabels) as SortKey[]).map(k => (
-                    <button key={k} onClick={() => { setSortKey(k); setShowDropdown(false); }} className={`block w-full py-2 px-3 text-left text-[11.5px] border-b border-border last:border-0 ${sortKey === k ? 'text-accent2 bg-accent3' : 'text-text2 hover:bg-surface2'}`}>
-                      {sortLabels[k]}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* Sort Direction */}
-            <button onClick={() => setSortDir(d => d === "desc" ? "asc" : "desc")} className="flex items-center gap-1 py-1 px-3 bg-surface2 border border-border rounded-lg text-text2 text-[11px]">
-              {sortDir === "desc" ? "Decreasing" : "Increasing"} <span>▼</span>
-            </button>
-          </div>
-        </div>
-
-        {symData.length === 0 ? (
-          <div className="text-center py-8 text-text3 text-[12px]">No data</div>
-        ) : (
-          <>
-            <ResponsiveContainer width="100%" height={Math.max(120, symData.length * 28)}>
-              <BarChart data={symData} layout="vertical" margin={{ top: 0, right: 50, left: 50, bottom: 0 }}>
-                <XAxis type="number" tick={{ fontSize: 9 }} axisLine={false} tickLine={false}
-                  tickFormatter={v => sortKey === "pnl" ? `$${v}` : sortKey === "winRate" ? `${v}%` : String(v)} />
-                <YAxis type="category" dataKey="symbol" tick={{ fontSize: 10, fill: "var(--text2)" }} width={50} axisLine={false} tickLine={false} />
-                <Tooltip {...tooltip} formatter={(v: unknown) =>
-                  sortKey === "pnl" ? [`$${Number(v).toFixed(2)}`, "PnL"] :
-                    sortKey === "winRate" ? [`${Number(v).toFixed(1)}%`, "Win Rate"] :
-                      [String(v), "Trades"]
-                } cursor={{ fill: "var(--surface3)" }} />
-                <ReferenceLine x={0} stroke="var(--border)" />
-                <Bar dataKey={sortKey === "winRate" ? "winRate" : sortKey === "count" ? "count" : "pnl"} radius={[0, 2, 2, 0]} maxBarSize={16}>
-                  {symData.map((s, i) => (
-                    <Cell key={i} fill={
-                      sortKey === "count"
-                        ? `hsl(${210 + i * 22}, 38%, 48%)`
-                        : s.pnl >= 0 ? "#4f81c7" : "#b0793a"
-                    } />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </>
-        )}
-      </div>
-
-      {/* Symbol Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: "Best Symbol Sum", val: fmtUSD(Math.max(...Object.values(stats.symbolStats).map(s => s.pnl), 0)), sub: stats.bestSymbol, color: "#4f81c7" },
-          { label: "Worst Symbol Sum", val: fmtUSD(Math.min(...Object.values(stats.symbolStats).map(s => s.pnl), 0)), sub: stats.worstSymbol, color: "#b0793a" },
-          { label: "Best Symbol Avg", val: fmtUSD(Math.max(...Object.values(stats.symbolStats).map(s => s.pnl / s.count), 0)), sub: "avg/trade", color: "#5b6ec9" },
-          { label: "Worst Symbol Avg", val: fmtUSD(Math.min(...Object.values(stats.symbolStats).map(s => s.pnl / s.count), 0)), sub: "avg/trade", color: "#9f5c2a" },
-          { label: "Number of Symbols", val: String(stats.numberOfSymbols), sub: "traded", color: "#6b5ea8" },
-        ].map(c => (
-          <div key={c.label} className="card py-3.5 px-4">
-            <div className="text-[10px] font-semibold text-text3 mb-1.5 uppercase tracking-[0.04em] flex items-center gap-1">
-              {c.label} <span className="text-border2 text-[9px]">ⓘ</span>
-            </div>
-            <div className={`text-[18px] font-extrabold tracking-[-0.5px]`} style={{ color: c.color }}>{c.val}</div>
-            <div className="text-[10px] text-text3 mt-0.5">{c.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Detailed Analysis Cards (Condensed into 1 row) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {/* Largest Win vs Loss */}
-        <div className="card p-4">
-          <div className="text-[12px] font-bold text-text mb-3">Extremes</div>
-          <div className="mb-3">
-            <div className="flex justify-between text-[11px] font-medium mb-1.5">
-              <span className="text-text3 text-[9px] uppercase tracking-[0.04em]">Largest Win</span>
-              <span className="text-[12px]" style={{ color: "#4f81c7", fontWeight: 700 }}>{fmtUSD(bestTrade)}</span>
-            </div>
-            <MiniProgressBar value={bestTrade} max={Math.max(bestTrade, Math.abs(worstTrade))} color="#4f81c7" />
-          </div>
-          <div>
-            <div className="flex justify-between text-[11px] font-medium mb-1.5 mt-4">
-              <span className="text-text3 text-[9px] uppercase tracking-[0.04em]">Largest Loss</span>
-              <span className="text-[12px]" style={{ color: "#b0793a", fontWeight: 700 }}>{fmtUSD(worstTrade)}</span>
-            </div>
-            <MiniProgressBar value={Math.abs(worstTrade)} max={Math.max(bestTrade, Math.abs(worstTrade))} color="#b0793a" />
-          </div>
-        </div>
-
-        {/* Long Analysis */}
-        <AnalysisCard
-          title="Long Analysis"
-          winColor="#4f81c7" lossColor="#b0793a"
-          wins={longWins.length} losses={longLoss.length}
-          pnl={longs.reduce((a, t) => a + t.pnl, 0)}
-          avgWin={avg(longWins.map(t => t.pnl))}
-          avgLoss={avg(longLoss.map(t => Math.abs(t.pnl)))}
-          avgPnl={longs.length ? longs.reduce((a, t) => a + t.pnl, 0) / longs.length : 0}
+      {/* 1. Hero Performance Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          title="Profit Factor"
+          value={stats.profitFactor.toFixed(2)}
+          subValue="Ratio"
+          icon={TrendingUp}
+          color="#4f81c7"
         />
-
-        {/* Short Analysis */}
-        <AnalysisCard
-          title="Short Analysis"
-          winColor="#6b5ea8" lossColor="#9f5c2a"
-          wins={shortWins.length} losses={shortLoss.length}
-          pnl={shorts.reduce((a, t) => a + t.pnl, 0)}
-          avgWin={avg(shortWins.map(t => t.pnl))}
-          avgLoss={avg(shortLoss.map(t => Math.abs(t.pnl)))}
-          avgPnl={shorts.length ? shorts.reduce((a, t) => a + t.pnl, 0) / shorts.length : 0}
+        <MetricCard
+          title="Expectancy"
+          value={fmtUSD(stats.expectedValue)}
+          subValue="per Trade"
+          icon={Target}
+          color="#10b981"
         />
+        <MetricCard
+          title="Win Rate"
+          value={`${stats.winRate}%`}
+          subValue={`${stats.wins}W / ${stats.losses}L`}
+          icon={Award}
+          color="#f59e0b"
+        />
+        <MetricCard
+          title="Max Drawdown"
+          value={`${stats.maxDrawdown.percent.toFixed(1)}%`}
+          subValue={fmtUSD(stats.maxDrawdown.amount)}
+          icon={ShieldAlert}
+          color="#ef4444"
+        />
+      </div>
 
-        {/* Long/Short Ratio */}
-        <div className="card p-4">
-          <div className="text-[12px] font-bold text-text mb-3">Long / Short Ratio</div>
-          <div className="mb-3.5 mt-2">
-            <div className="flex justify-between text-[11px] font-medium mb-1.5">
-              <span className="text-text3">Longs</span>
-              <span className="font-bold" style={{ color: "#4f81c7" }}>{longs.length}</span>
-            </div>
-            <MiniProgressBar value={longs.length} max={Math.max(longs.length + shorts.length, 1)} color="#4f81c7" />
+      {/* 2. Temporal Analysis Section (Merged Time Metrics) */}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-accent opacity-70" />
+            <h3 className="text-[13px] font-black uppercase tracking-widest text-text opacity-80">Chronos Analysis</h3>
           </div>
-          <div>
-            <div className="flex justify-between text-[11px] font-medium mb-1.5 mt-4">
-              <span className="text-text3">Shorts</span>
-              <span className="font-bold" style={{ color: "#6b5ea8" }}>{shorts.length}</span>
+          <span className="text-[10px] font-bold text-text3 opacity-40 uppercase tracking-widest">WIB / UTC+7</span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Day of Week */}
+          <div className="card p-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold text-text3 uppercase tracking-wider opacity-60">Day of Week</span>
+              <span className="text-[13px] font-black text-text">Daily Performance Pulse</span>
             </div>
-            <MiniProgressBar value={shorts.length} max={Math.max(longs.length + shorts.length, 1)} color="#6b5ea8" />
+            <div className="h-[140px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={stats.byDow} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: 'var(--text3)' }} dy={10} />
+                  <YAxis hide />
+                  <Tooltip {...tooltipStyles} />
+                  <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={24}>
+                    {stats.byDow.map((d: any, i: number) => <Cell key={i} fill={d.pnl >= 0 ? "var(--green)" : "var(--red)"} fillOpacity={0.8} />)}
+                  </Bar>
+                  <Line type="monotone" dataKey="wr" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3, fill: 'var(--surface2)', strokeWidth: 2 }} activeDot={{ r: 5 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <div className="mt-4 text-[10px] font-medium text-text3 text-center bg-surface2 p-1.5 rounded uppercase tracking-[0.04em]">
-            {longs.length} Longs Â· {shorts.length} Shorts
+
+          {/* Sessions */}
+          <div className="card p-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold text-text3 uppercase tracking-wider opacity-60">Market Sessions</span>
+              <span className="text-[13px] font-black text-text">Global Liquidity Edge</span>
+            </div>
+            <div className="h-[140px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.bySession} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="session" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 800, fill: 'var(--text3)' }} dy={10}
+                    tickFormatter={(val: string) => val === "Overlap (LDN+NY)" ? "OVERLAP" : val.toUpperCase()} />
+                  <Tooltip {...tooltipStyles} />
+                  <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                    {stats.bySession.map((d: any, i: number) => <Cell key={i} fill={d.pnl >= 0 ? SESSION_COLORS[d.session] : "var(--red)"} fillOpacity={0.9} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Hours */}
+          <div className="card p-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold text-text3 uppercase tracking-wider opacity-60">Hour of Day</span>
+              <span className="text-[13px] font-black text-text">Peak Performance Window</span>
+            </div>
+            <div className="h-[140px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.byHour} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="slot" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'var(--text3)' }} dy={10} />
+                  <Tooltip {...tooltipStyles} />
+                  <Area type="monotone" dataKey="pnl" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="wr" stroke="rgba(255,255,255,0.05)" fill="transparent" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Setup Performance */}
-      <div className="card p-4 mt-2">
-        <div className="text-[12px] font-bold text-text mb-3">Setup Performance</div>
-        <div className="flex flex-col">
-          <div className="grid grid-cols-[1fr_40px_40px_60px_60px] md:grid-cols-[1fr_60px_60px_80px_80px] py-1.5 px-3 text-[9px] font-semibold text-text3 uppercase tracking-[0.05em] border-b border-border bg-surface2 rounded-t-md">
-            <div>Setup</div><div>Trades</div><div>WR</div><div>PnL</div><div>Avg Pips</div>
+      {/* 3. Asset & Behavior Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mt-4">
+
+        {/* Symbol Performance */}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 px-1">
+            <PieIcon size={16} className="text-accent opacity-70" />
+            <h3 className="text-[13px] font-black uppercase tracking-widest text-text opacity-80">Asset DNA</h3>
           </div>
-          {Object.values(stats.symbolStats).length === 0 ? (
-            <div className="p-4 text-center text-text3 text-[11px]">No data</div>
-          ) : null}
-          {/* Group by setup */}
-          {useMemo(() => {
-            const m: Record<string, { pnl: number; count: number; wins: number; pips: number }> = {};
-            closed.forEach(t => {
-              if (!m[t.setup]) m[t.setup] = { pnl: 0, count: 0, wins: 0, pips: 0 };
-              m[t.setup].pnl += t.pnl;
-              m[t.setup].count++;
-              m[t.setup].pips += t.pips || 0;
-              if (t.pnl > 0) m[t.setup].wins++;
-            });
-            return Object.entries(m).sort((a, b) => b[1].count - a[1].count).map(([setup, d]) => (
-              <div key={setup} className="grid grid-cols-[1fr_40px_40px_60px_60px] md:grid-cols-[1fr_60px_60px_80px_80px] py-2 px-3 border-b border-border text-[11px] transition-colors hover:bg-surface3 last:border-0">
-                <span className="text-text font-medium">{setup}</span>
-                <span className="text-text3">{d.count}</span>
-                <span className={`font-semibold ${d.wins / d.count >= 0.5 ? 'text-[#4f81c7]' : 'text-[#b0793a]'
-                  }`}>{((d.wins / d.count) * 100).toFixed(0)}%</span>
-                <span className={`font-semibold tracking-[-0.2px] ${d.pnl >= 0 ? 'text-[#4f81c7]' : 'text-[#b0793a]'
-                  }`}>{fmtUSD(d.pnl)}</span>
-                <span className={`font-medium ${d.pips >= 0 ? 'text-[#5b6ec9]' : 'text-[#9f5c2a]'
-                  }`}>{fmtPips(d.pips / d.count)}</span>
+          <div className="card p-5 flex flex-col gap-6 flex-1">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[13px] font-black text-text">Top Symbols</span>
+                <span className="text-[10px] font-bold text-text3 opacity-60 uppercase tracking-widest">By Cumulative PnL</span>
               </div>
-            ));
-          }, [closed])}
+              <Activity size={16} className="text-text3 opacity-20" />
+            </div>
+            <div className="flex-1 min-h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={symData} layout="vertical" margin={{ left: 20, right: 40 }}>
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="symbol" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 800, fill: 'var(--text)' }} width={80} />
+                  <Tooltip {...tooltipStyles} />
+                  <Bar dataKey="pnl" radius={[0, 6, 6, 0]} maxBarSize={28}>
+                    {symData.map((s: any, i: number) => (
+                      <Cell key={i} fill={s.pnl >= 0 ? `hsl(${210 + i * 15}, 60%, 55%)` : "var(--red)"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Behavioral Metrics */}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2 px-1">
+            <Flame size={16} className="text-accent opacity-70" />
+            <h3 className="text-[13px] font-black uppercase tracking-widest text-text opacity-80">Behavioral Pulse</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+            <div className="card p-6 bg-surface/40 flex flex-col gap-6">
+              <span className="text-[11px] font-black text-text uppercase tracking-widest border-b border-border/10 pb-3">Hold Dynamics</span>
+              <div className="flex flex-col gap-5">
+                <MiniProgressBar label="Scalping (<1h)" value={stats.scalpingWinRate} max={100} color="#4f81c7" icon={Clock} />
+                <MiniProgressBar label="Intraday (<24h)" value={stats.intradayWinRate} max={100} color="#6366f1" icon={Zap} />
+                <MiniProgressBar label="Multiday" value={stats.multidayWinRate} max={100} color="#8b5cf6" icon={Calendar} />
+              </div>
+            </div>
+            <div className="card p-6 bg-surface/40 flex flex-col gap-4">
+              <span className="text-[11px] font-black text-text uppercase tracking-widest border-b border-border/10 pb-3">Time Distribution</span>
+              <div className="flex flex-col gap-2.5">
+                {[
+                  { lbl: "Avg Win Hold", val: formatDuration(stats.avgHoldWins).str, color: "var(--green)" },
+                  { lbl: "Avg Loss Hold", val: formatDuration(stats.avgHoldLosses).str, color: "var(--red)" },
+                  { lbl: "Avg Long Hold", val: formatDuration(stats.avgHoldLongs).str, color: "var(--text3)" },
+                  { lbl: "Avg Short Hold", val: formatDuration(stats.avgHoldShorts).str, color: "var(--text3)" },
+                ].map(item => (
+                  <div key={item.lbl} className="flex items-center justify-between py-2 border-b border-border/5 last:border-0">
+                    <span className="text-[11px] font-bold text-text3 uppercase tracking-tight">{item.lbl}</span>
+                    <span className="text-[12px] font-black tabular-nums" style={{ color: item.color }}>{item.val}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card p-6 col-span-1 md:col-span-2 bg-gradient-to-br from-accent/5 to-transparent flex items-center justify-between border-accent/10">
+              <div className="flex flex-col gap-1">
+                <span className="text-[14px] font-black text-text">Long / Short Dynamics</span>
+                <span className="text-[10px] text-text3 font-bold uppercase tracking-widest opacity-60">Relative win rates & distribution</span>
+              </div>
+              <div className="flex items-center gap-10 pr-4">
+                <div className="flex flex-col items-center">
+                  <span className="text-[18px] font-black text-green">{(stats.longWins / Math.max(stats.longWins + stats.longLosses, 1) * 100).toFixed(0)}%</span>
+                  <span className="text-[9px] font-bold text-text3 opacity-40 uppercase">BUY WR</span>
+                </div>
+                <div className="w-px h-8 bg-border/20" />
+                <div className="flex flex-col items-center">
+                  <span className="text-[18px] font-black text-blue">{(stats.shortWins / Math.max(stats.shortWins + stats.shortLosses, 1) * 100).toFixed(0)}%</span>
+                  <span className="text-[9px] font-bold text-text3 opacity-40 uppercase">SELL WR</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
     </div>
   );
 }

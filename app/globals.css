@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,46 +7,44 @@
 /* ═══ DESIGN TOKENS ═══ */
 @layer base {
   :root {
-    --bg: #f4f6f8;
-    --bg-grad: var(--bg);
+    --bg: #F9FAFB;
+    --bg-grad: #F9FAFB;
     --surface: #ffffff;
     --surface2: #f8fafc;
     --surface3: #f1f5f9;
-    --border: 0 0% 89.8%;
-    --border2: rgba(0, 0, 0, .12);
-    --text: #0f172a;
-    --text2: #475569;
-    --text3: #94a3b8;
+    --border: 220 13% 91%;
+    --border2: 220 13% 85%;
+    --text: #0b0e11;
+    --text2: #334155;
+    --text3: #64748b;
     --pill: #0f172a;
     --pill-t: #ffffff;
-    --accent: 0 0% 96.1%;
-    --accent-s: rgba(79, 70, 229, .08);
-    --accent-r: rgba(79, 70, 229, .20);
-    --green: #2fa16b;
-    --green-bg: #e6f7ec;
-    --green-br: #bdf0d4;
-    --red: #df5a5a;
-    --red-bg: #fceded;
+    --accent: 221 83% 53%; /* #2563eb in HSL */
+    --accent-bg: #eff6ff;
+    --accent-s: rgba(37, 99, 235, .08);
+    --accent-r: rgba(37, 99, 235, .20);
+    --green: #0ecb81;
+    --green-bg: #ebfff7;
+    --green-br: #b3f5e1;
+    --red: #f84960;
+    --red-bg: #fff1f2;
     --red-br: #f7d2d2;
-    --yellow: #d97706;
-    --yellow-bg: rgba(217, 119, 6, .09);
     --blue: #2563eb;
-    --blue-bg: rgba(37, 99, 235, .09);
-    --orange: #ea580c;
-    --orange-bg: rgba(234, 88, 12, .09);
+    --blue-bg: #eff6ff;
     --s0: none;
-    --s1: none;
-    --s2: none;
-    --s3: none;
-    --s4: 0 4px 20px rgba(0, 0, 0, 0.05);
-    --r1: 8px;
+    --s1: 0 1px 3px rgba(0, 0, 0, 0.02);
+    --s2: 0 4px 12px rgba(0, 0, 0, 0.03);
+    --s3: 0 8px 24px rgba(0, 0, 0, 0.05);
+    --s4: 0 12px 32px rgba(0, 0, 0, 0.08);
+    --r1: 6px;
     --r2: 12px;
-    --r3: 18px;
-    --r4: 24px;
-    --r5: 32px;
-    --sidebar-w: 64px;
-    --topbar-h: 60px;
-    --fn: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --r3: 16px;
+    --r4: 20px;
+    --r5: 28px;
+    --sidebar-w: 200px;
+    --sidebar-collapsed-w: 64px;
+    --topbar-h: 56px;
+    --fn: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
     --fm: 'JetBrains Mono', monospace;
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
@@ -71,6 +69,14 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   html.dark {
@@ -146,9 +152,15 @@
     padding-top: env(safe-area-inset-top);
   }
 
+  /* --- Global Reset & Base --- */
+  * {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* --- Premium Scrollbar --- */
   ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
@@ -156,7 +168,6 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--border2);
     border-radius: 99px;
   }
 
@@ -173,6 +184,16 @@
   html.dark input::placeholder,
   html.dark textarea::placeholder {
     color: var(--text3);
+  }
+  .dark {
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
 
@@ -749,8 +770,7 @@
     position: fixed;
     inset: 0;
     z-index: 999;
-    background: rgba(8, 10, 30, .45);
-    backdrop-filter: blur(4px);
+    background: rgba(8, 10, 30, .6);
     display: flex;
     align-items: center;
     justify-content: center;

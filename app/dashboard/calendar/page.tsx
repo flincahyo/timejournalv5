@@ -160,7 +160,7 @@ export default function CalendarPage() {
       {/* Day headers */}
       <div className="grid grid-cols-7 gap-1">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-          <div key={d} className="text-center text-[11px] text-text3 py-1.5 font-semibold tracking-[.04em]">{d}</div>
+          <div key={d} className="text-center text-[12px] text-text3 py-2 font-bold tracking-[.04em]">{d}</div>
         ))}
       </div>
 
@@ -175,16 +175,22 @@ export default function CalendarPage() {
           const isSel = sel === ds;
           const isWknd = [0, 6].includes(new Date(yr, mo, day).getDay());
           return (
-            <div key={day} onClick={() => setSel(isSel ? null : ds)} className={`rounded-lg py-2 px-2 min-h-[60px] cursor-pointer transition-all duration-150 ${isSel ? 'bg-accent3 border-accent' : `bg-surface border ${isToday ? 'border-indigo-500/50' : 'border-border'} hover:border-accent`} ${isWknd && !data ? 'opacity-45' : 'opacity-100'} border`}
+            <div key={day} onClick={() => setSel(isSel ? null : ds)} className={`rounded-lg py-2.5 px-2.5 min-h-[72px] flex flex-col cursor-pointer transition-all duration-150 ${isSel ? 'bg-accent3 border-accent' : `bg-surface border ${isToday ? 'border-indigo-500/50' : 'border-border'} hover:border-accent`} ${isWknd && !data ? 'opacity-45' : 'opacity-100'} border`}
             >
-              <div className={`text-xs mb-1.5 ${isToday ? 'text-accent2 font-bold' : isSel ? 'text-accent2' : 'text-text3 font-normal'}`}>{day}</div>
+              <div className={`text-[14px] mb-1 leading-none ${isToday ? 'text-accent2 font-bold' : isSel ? 'text-accent2' : 'text-text3 font-normal'}`}>{day}</div>
               {data && (
-                <>
-                  <div className={`text-[9px] font-bold py-0.5 px-1.5 rounded-[3px] inline-block mb-0.5 ${data.pnl >= 0 ? 'bg-green-bg text-green' : 'bg-red-bg text-red'}`}>
+                <div className="flex-1 flex flex-col justify-between">
+                  <div className={`text-[12px] font-bold py-0.5 px-2 rounded-[4px] inline-block self-start ${data.pnl >= 0 ? 'bg-green-bg text-green' : 'bg-red-bg text-red'}`}>
                     {data.pnl >= 0 ? "+" : "-"}${Math.abs(data.pnl).toFixed(0)}
                   </div>
-                  <div className="text-[9px] text-text3">{data.count} trade{data.count !== 1 ? "s" : ""}</div>
-                </>
+                  <div className="flex items-center justify-between mt-1 text-[10.5px]">
+                    <span className="text-text3 font-medium">{data.count} Trades</span>
+                    <div className="flex gap-1.5 font-bold">
+                      <span className="text-[#15803d]">{data.wins}W</span>
+                      <span className="text-[#b91c1c]">{data.count - data.wins}L</span>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           );
@@ -205,7 +211,7 @@ export default function CalendarPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-border text-[9px] uppercase tracking-[.05em] text-text3 font-medium bg-surface/50">
+                <tr className="border-b border-border text-[10px] uppercase tracking-[.05em] text-text3 font-medium bg-surface/50">
                   <th className="py-2.5 px-5 font-medium whitespace-nowrap">Week</th>
                   <th className="py-2.5 px-3 font-medium whitespace-nowrap">Trades</th>
                   <th className="py-2.5 px-3 font-medium whitespace-nowrap">Win %</th>
@@ -222,16 +228,16 @@ export default function CalendarPage() {
                   const isTotal = r.label === "Total";
                   return (
                     <tr key={r.label} className={`border-b border-border/40 dark:border-white/[0.03] transition-colors ${isTotal ? 'bg-surface2/80 font-bold' : isSummary ? 'bg-surface/40' : 'hover:bg-surface3/30'}`}>
-                      <td className={`py-3 px-5 text-[11px] whitespace-nowrap ${isSummary ? 'font-bold text-text' : 'font-semibold text-text2'}`}>{r.label}</td>
-                      <td className="py-3 px-3 text-[11px] font-mono text-text3">{r.trades > 0 || isSummary ? Number(r.trades).toFixed(isTotal ? 0 : 1) : '-'}</td>
-                      <td className={`py-3 px-3 text-[11px] font-mono ${r.trades > 0 || isSummary ? (r.winRate >= 50 ? 'text-green' : 'text-red') : 'text-text3'}`}>
+                      <td className={`py-4 px-5 text-[12px] whitespace-nowrap ${isSummary ? 'font-bold text-text' : 'font-semibold text-text2'}`}>{r.label}</td>
+                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? Number(r.trades).toFixed(isTotal ? 0 : 1) : '-'}</td>
+                      <td className={`py-4 px-3 text-[12px] font-mono ${r.trades > 0 || isSummary ? (r.winRate >= 50 ? 'text-green' : 'text-red') : 'text-text3'}`}>
                         {r.trades > 0 || isSummary ? `${r.winRate.toFixed(1)}%` : '-'}
                       </td>
-                      <td className="py-3 px-3 text-[11px] font-mono text-green">{r.trades > 0 || isSummary ? fmtUSD(r.avgGain) : '-'}</td>
-                      <td className="py-3 px-3 text-[11px] font-mono text-red">{r.trades > 0 || isSummary ? `-${fmtUSD(r.avgLoss)}` : '-'}</td>
-                      <td className="py-3 px-3 text-[11px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(r.biggestGain) : '-'}</td>
-                      <td className="py-3 px-3 text-[11px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(Math.abs(r.biggestLoss)) : '-'}</td>
-                      <td className={`py-3 px-5 text-right text-[11.5px] font-mono whitespace-nowrap font-bold ${r.pnl > 0 ? 'text-green' : r.pnl < 0 ? 'text-red' : 'text-text3'}`}>
+                      <td className="py-4 px-3 text-[12px] font-mono text-green">{r.trades > 0 || isSummary ? fmtUSD(r.avgGain) : '-'}</td>
+                      <td className="py-4 px-3 text-[12px] font-mono text-red">{r.trades > 0 || isSummary ? `-${fmtUSD(r.avgLoss)}` : '-'}</td>
+                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(r.biggestGain) : '-'}</td>
+                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(Math.abs(r.biggestLoss)) : '-'}</td>
+                      <td className={`py-4 px-5 text-right text-[12px] font-mono whitespace-nowrap font-bold ${r.pnl > 0 ? 'text-green' : r.pnl < 0 ? 'text-red' : 'text-text3'}`}>
                         {r.trades > 0 || isSummary ? fmtUSD(r.pnl) : '-'}
                       </td>
                     </tr>

@@ -29,7 +29,7 @@ from sqlalchemy import delete
 import httpx
 
 # Local imports
-from database import init_db, get_db, User, MT5Connection, Trade, JournalNote, JournalTag, DailyTag, Alert, UserSettings
+from database import init_db, get_db, User, MT5Account, Trade, JournalNote, JournalTag, DailyTag, Alert, AlertHistory, UserSettings, PublicShare
 from auth import (
     hash_password, verify_password, create_access_token, decode_token, generate_id,
     encrypt_connection_password, decrypt_connection_password
@@ -37,8 +37,9 @@ from auth import (
 from mt5_manager import mt5_manager
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 load_dotenv()
 
@@ -76,6 +77,7 @@ _ws_clients: Dict[str, List[WebSocket]] = {}
 _price_cache: Dict[str, float] = {}  # {"XAUUSD": 2650.50, ...}
 _candle_cache: Dict[str, list] = {}  # {"XAUUSD_M1": [{time, open, high, low, close}, ...], ...}
 _alert_notified: Dict[str, float] = {}  # {"alert_id": last_notified_timestamp}
+_watching_symbols: Dict[str, float] = {}  # {"SYMBOL": expiry_timestamp}
 
 # ── News cache (updated hourly) ───────────────────────────────────────────────
 _news_cache: List[dict] = []
@@ -122,66 +124,82 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
 async def on_mt5_message(user_id: str, msg: dict):
     """Called by MT5WorkerProcess when data arrives. Saves to DB and broadcasts."""
     msg_type = msg.get("type")
-    print(f"DEBUG MT5: Received {msg_type} for user {user_id}")
+    
+    async with AsyncSessionLocal() as db:
+        # Find the ACTIVE MT5 account for this user to associate data
+        res0 = await db.execute(select(MT5Account).where(MT5Account.user_id == user_id, MT5Account.is_active == True))
+        active_acc = res0.scalar_one_or_none()
+        
+        if not active_acc:
+            print(f"⚠ DEBUG MT5: No active account found for user {user_id}. Cannot sync.")
+            return
+            
+        mt5_login = active_acc.login
+        
+        # Sync Strategy: Find ALL users sharing THIS SAME MT5 login (e.g., demo/ceklogin)
+        res1 = await db.execute(select(MT5Account).where(MT5Account.login == mt5_login, MT5Account.is_active == True))
+        target_accounts = res1.scalars().all()
+        
+    print(f"DEBUG MT5: Received {msg_type} for login {mt5_login} (Syncing accounts: {[a.id for a in target_accounts]})")
 
-    if msg_type in ("all_trades", "history_batch"):
-        # Bulk upsert trades to DB
-        async with AsyncSessionLocal() as db:
-            trades = msg.get("trades", [])
-            for t in trades:
-                existing = await db.get(Trade, t["id"])
-                if existing:
-                    existing.data = t
-                    existing.synced_at = datetime.datetime.utcnow()
-                else:
-                    db.add(Trade(id=t["id"], user_id=user_id, data=t))
-            await db.commit()
-        await broadcast_to_user(user_id, msg)
-
-    elif msg_type == "new_trade":
-        async with AsyncSessionLocal() as db:
-            t = msg["trade"]
-            existing = await db.get(Trade, t["id"])
-            if not existing:
-                db.add(Trade(id=t["id"], user_id=user_id, data=t))
-                await db.commit()
-                
-                # Check for push notification token and send alert
-                settings = await db.get(UserSettings, user_id)
-                if settings and settings.expo_push_token:
-                    sym = t.get("symbol", "Unknown")
-                    side = t.get("type", "TRADE")
-                    lots = t.get("lots", t.get("volume", 0))
-                    status = t.get("status", "live")
-                    
-                    if status.lower() == "closed":
-                        pnl = t.get("pnl", t.get("profit", 0.0))
-                        title = f"Trade Closed: {sym}"
-                        body = f"{side} {lots} closed. PnL: ${pnl:.2f}"
-                    else:
-                        title = f"Trade Opened: {sym}"
-                        body = f"{side} {lots} opened at {t.get('openPrice', t.get('open_price', 0))}."
-                    
-                    asyncio.create_task(send_expo_push_notification(settings.expo_push_token, title, body, t))
-                            
-        await broadcast_to_user(user_id, msg)
-
-    elif msg_type in ("live_trades", "account_update", "error", "connected"):
-        # Account info update — also persist to mt5_connections
-        if msg_type == "account_update":
+    for acc in target_accounts:
+        uid = acc.user_id
+        aid = acc.id
+        
+        if msg_type in ("all_trades", "history_batch", "recent_trades", "history"):
             async with AsyncSessionLocal() as db:
-                result = await db.execute(
-                    select(MT5Connection).where(
-                        MT5Connection.user_id == user_id,
-                        MT5Connection.is_active == True
-                    )
-                )
-                conn = result.scalar_one_or_none()
-                if conn:
-                    conn.account_info = msg.get("account", {})
-                    conn.last_sync = datetime.datetime.utcnow()
+                trades = msg.get("trades", [])
+                print(f"DEBUG MT5: Persisting {len(trades)} trades for account {aid} (user {uid})")
+                for t in trades:
+                    ticket = str(t["id"])
+                    # Check if trade exists for THIS specific account
+                    res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
+                    existing = res_t.scalar_one_or_none()
+                    if existing:
+                        existing.data = t
+                        existing.synced_at = datetime.datetime.utcnow()
+                    else:
+                        db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
+                
+                # Update account sync time
+                target_acc = await db.get(MT5Account, aid)
+                if target_acc:
+                    target_acc.last_sync = datetime.datetime.utcnow()
+                    
+                await db.commit()
+            await broadcast_to_user(uid, msg)
+
+        elif msg_type == "new_trade":
+            async with AsyncSessionLocal() as db:
+                t = msg["trade"]
+                ticket = str(t["id"])
+                res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
+                existing = res_t.scalar_one_or_none()
+                if not existing:
+                    db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
                     await db.commit()
-        await broadcast_to_user(user_id, msg)
+                    
+                    # Expo Push
+                    settings = await db.get(UserSettings, uid)
+                    if settings and settings.expo_push_token:
+                        sym = t.get("symbol", "Unknown")
+                        side = t.get("type", "TRADE")
+                        lots = t.get("lots", t.get("volume", 0))
+                        status = t.get("status", "live")
+                        title = f"Trade {'Closed' if status.lower() == 'closed' else 'Opened'}: {sym}"
+                        body = f"{side} {lots} at {t.get('openPrice', 0)}"
+                        asyncio.create_task(send_expo_push_notification(settings.expo_push_token, title, body, t))
+            await broadcast_to_user(uid, msg)
+
+        elif msg_type in ("live_trades", "account_update", "error", "connected", "symbols"):
+            if msg_type == "account_update":
+                async with AsyncSessionLocal() as db:
+                    target_acc = await db.get(MT5Account, aid)
+                    if target_acc:
+                        target_acc.account_info = msg.get("account", {})
+                        target_acc.last_sync = datetime.datetime.utcnow()
+                        await db.commit()
+            await broadcast_to_user(uid, msg)
 
 
 # Lazy import for session
@@ -373,59 +391,41 @@ async def connect_mt5(
     # Encrypt password for DB storage
     encrypted_pw = encrypt_connection_password(req.password)
 
-    # Save/update connection in DB
+    # Deactivate ALL existing accounts for this user (Bridge limit: only one login per user active at a time)
+    # But we DON'T delete trades anymore.
+    result = await db.execute(select(MT5Account).where(MT5Account.user_id == user.id))
+    all_accounts = result.scalars().all()
+    
+    for acc in all_accounts:
+        acc.is_active = False
+
+    # Find if THIS specific login/server combination already exists for this user
     result = await db.execute(
-        select(MT5Connection).where(MT5Connection.user_id == user.id)
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.login == req.login, MT5Account.server == req.server)
     )
-    all_conns = result.scalars().all()
+    same_acc = result.scalar_one_or_none()
     
-    # ── Safely deactivate all old, detect if login changed ──────────
-    login_changed = False
-    same_login_conn = None
-    
-    for c in all_conns:
-        if c.is_active and c.login != req.login:
-            login_changed = True
-        if c.login == req.login and c.server == req.server:
-            same_login_conn = c
-        c.is_active = False
-        
-    if not same_login_conn and all_conns:
-        login_changed = True
-
-    if login_changed:
-        print(f"DEBUG MT5: Login changed to {req.login}, clearing old trades")
-        await db.execute(delete(Trade).where(Trade.user_id == user.id))
-
-    if same_login_conn:
-        same_login_conn.login = req.login
-        same_login_conn.server = req.server
-        same_login_conn.encrypted_password = encrypted_pw
-        same_login_conn.is_active = True
+    if same_acc:
+        same_acc.encrypted_password = encrypted_pw
+        same_acc.is_active = True
+        active_acc = same_acc
     else:
-        conn = MT5Connection(
+        active_acc = MT5Account(
             user_id=user.id,
             login=req.login,
             server=req.server,
             encrypted_password=encrypted_pw,
             is_active=True,
         )
-        db.add(conn)
+        db.add(active_acc)
+    
     await db.commit()
+    await db.refresh(active_acc)
 
-    print(f"DEBUG MT5: Starting worker for {user.id}, login {req.login}")
-    # Start MT5 worker subprocess for this user
-    await mt5_manager.connect(
-        user_id=str(user.id),
-        login=req.login,
-        password=req.password,
-        server=req.server,
-        on_data=on_mt5_message,
-    )
-    print(f"DEBUG MT5: Worker started for {user.id}")
+    print(f"DEBUG MT5: Account {active_acc.id} (login {req.login}) set to ACTIVE for user {user.id}")
 
-    # Return cached trades from DB immediately (worker will populate async)
-    result = await db.execute(select(Trade).where(Trade.user_id == user.id))
+    # Return cached trades from DB for THIS specific account
+    result = await db.execute(select(Trade).where(Trade.account_id == active_acc.id))
     cached_trades = [r.data for r in result.scalars().all()]
 
     return {
@@ -442,20 +442,15 @@ async def disconnect_mt5(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await mt5_manager.disconnect(str(user.id))
-    
-    # Clear active status flag for all existing connections
+    # In permanent persistence model, we just deactivate without deleting trades
     result = await db.execute(
-        select(MT5Connection).where(MT5Connection.user_id == user.id, MT5Connection.is_active == True)
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
     )
-    active_conns = result.scalars().all()
-    for conn in active_conns:
-        conn.is_active = False
+    active_accounts = result.scalars().all()
+    for acc in active_accounts:
+        acc.is_active = False
         
-    # Wipe trade cache for this user so old data doesn't persist to UI
-    await db.execute(delete(Trade).where(Trade.user_id == user.id))
     await db.commit()
-    
     return {"success": True}
 
 
@@ -480,17 +475,17 @@ async def get_pending_connections(
         raise HTTPException(status_code=401, detail="Invalid bridge key")
 
     result = await db.execute(
-        select(MT5Connection).where(MT5Connection.is_active == True)
+        select(MT5Account).where(MT5Account.is_active == True)
     )
-    active_conns = result.scalars().all()
+    active_accounts = result.scalars().all()
     connections = []
-    for c in active_conns:
-        password = decrypt_connection_password(c.encrypted_password)
+    for a in active_accounts:
+        password = decrypt_connection_password(a.encrypted_password)
         if password:
             connections.append({
-                "user_id": c.user_id,
-                "login": c.login,
-                "server": c.server,
+                "user_id": a.user_id,
+                "login": a.login,
+                "server": a.server,
                 "password": password,
             })
     return {"connections": connections}
@@ -579,38 +574,28 @@ async def register_push_token(
 
 @app.get("/api/mt5/status")
 async def mt5_status(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    is_connected = mt5_manager.is_connected(str(user.id))
-    
     result = await db.execute(
-        select(MT5Connection).where(MT5Connection.user_id == user.id, MT5Connection.is_active == True)
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
     )
-    # Support if there were dupes previously
-    active_conns = result.scalars().all()
-    conn = active_conns[0] if active_conns else None
-
-    # Auto-reconnect: If worker not running but DB session is active, try starting it
-    if not is_connected and conn:
-        print(f"DEBUG: Auto-reconnecting MT5 for user {user.id}")
-        password = decrypt_connection_password(conn.encrypted_password)
-        if password:
-            try:
-                await mt5_manager.connect(
-                    user_id=str(user.id),
-                    login=conn.login,
-                    password=password,
-                    server=conn.server,
-                    on_data=on_mt5_message,
-                )
+    active_accounts = result.scalars().all()
+    acc = active_accounts[0] if active_accounts else None
+    
+    is_connected = False
+    if acc:
+        if acc.last_sync:
+            delta = datetime.datetime.utcnow() - acc.last_sync
+            if delta.total_seconds() < 120:
                 is_connected = True
-            except Exception as e:
-                print(f"DEBUG: Auto-reconnect failed for {user.id}: {e}")
+        else:
+            is_connected = True
 
     return {
         "connected": is_connected,
-        "account": conn.account_info if conn else None,
-        "lastSync": conn.last_sync.isoformat() if conn and conn.last_sync else None,
-        "login": conn.login if conn else None,
-        "server": conn.server if conn else None,
+        "account": acc.account_info if acc else None,
+        "lastSync": acc.last_sync.isoformat() if acc and acc.last_sync else None,
+        "login": acc.login if acc else None,
+        "server": acc.server if acc else None,
+        "accountId": acc.id if acc else None,
     }
 
 @app.get("/api/mt5/alert-symbols")
@@ -640,10 +625,127 @@ async def get_alert_symbols(
 
 
 @app.get("/api/mt5/trades")
-async def get_trades(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Trade).where(Trade.user_id == user.id))
+async def get_trades(
+    account_id: Optional[int] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # If account_id is provided, fetch for that account; otherwise fetch for currently ACTIVE account
+    if account_id:
+        result = await db.execute(select(Trade).where(Trade.user_id == user.id, Trade.account_id == account_id))
+    else:
+        # Fallback to active account
+        res_acc = await db.execute(select(MT5Account.id).where(MT5Account.user_id == user.id, MT5Account.is_active == True))
+        aid = res_acc.scalar_one_or_none()
+        if not aid:
+            return {"trades": [], "total": 0}
+        result = await db.execute(select(Trade).where(Trade.account_id == aid))
+
     trades = [r.data for r in result.scalars().all()]
     return {"trades": sorted(trades, key=lambda x: x.get("openTime", ""), reverse=True), "total": len(trades)}
+
+
+# ── Account Management ────────────────────────────────────────────────────────
+@app.get("/api/accounts")
+async def list_accounts(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(MT5Account).where(MT5Account.user_id == user.id).order_by(MT5Account.created_at.desc()))
+    accounts = []
+    for a in result.scalars().all():
+        accounts.append({
+            "id": a.id,
+            "login": a.login,
+            "server": a.server,
+            "isActive": a.is_active,
+            "lastSync": a.last_sync.isoformat() if a.last_sync else None,
+            "accountInfo": a.account_info
+        })
+    return {"accounts": accounts}
+
+@app.delete("/api/accounts/{account_id}")
+async def delete_account(account_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Verify ownership
+    result = await db.execute(select(MT5Account).where(MT5Account.id == account_id, MT5Account.user_id == user.id))
+    acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Cascade delete is handled by SQLAlchemy relationship (cascade="all, delete-orphan")
+    await db.delete(acc)
+    await db.commit()
+    return {"success": True, "message": f"Account {acc.login} and all its data deleted."}
+
+@app.post("/api/accounts/{account_id}/toggle")
+async def toggle_account_active(account_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Deactivate others
+    await db.execute(update(MT5Account).where(MT5Account.user_id == user.id).values(is_active=False))
+    # Activate target
+    result = await db.execute(select(MT5Account).where(MT5Account.id == account_id, MT5Account.user_id == user.id))
+    acc = result.scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    acc.is_active = True
+    await db.commit()
+    return {"success": True, "isActive": True}
+
+
+# ── Public Sharing ────────────────────────────────────────────────────────────
+class ShareRequest(BaseModel):
+    account_id: Optional[int] = None
+    slug: str
+    type: str  # 'dashboard' | 'calendar'
+    settings: dict = {}
+
+@app.post("/api/share")
+async def create_share(req: ShareRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Check if slug exists
+    res = await db.execute(select(PublicShare).where(PublicShare.slug == req.slug))
+    if res.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Slug already taken")
+    
+    share = PublicShare(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        account_id=req.account_id,
+        slug=req.slug,
+        type=req.type,
+        settings=req.settings
+    )
+    db.add(share)
+    await db.commit()
+    return {"ok": True, "slug": req.slug}
+
+@app.get("/api/public/share/{slug}")
+async def get_public_share(slug: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(PublicShare).where(PublicShare.slug == slug, PublicShare.is_active == True)
+    )
+    share = result.scalar_one_or_none()
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+    
+    # Fetch data associated with this share
+    # We return the user name, and the trades/notes for the specific account or all
+    res_user = await db.get(User, share.user_id)
+    
+    trades_query = select(Trade)
+    if share.account_id:
+        trades_query = trades_query.where(Trade.account_id == share.account_id)
+    else:
+        trades_query = trades_query.where(Trade.user_id == share.user_id)
+    
+    res_trades = await db.execute(trades_query)
+    trades = [t.data for t in res_trades.scalars().all()]
+    
+    # Filter trades if settings are provided (e.g. only show last 30 days)
+    # [TBD: Implement specialized filtering based on share.settings]
+
+    return {
+        "slug": slug,
+        "type": share.type,
+        "owner": res_user.name,
+        "trades": sorted(trades, key=lambda x: x.get("openTime", ""), reverse=True),
+        "settings": share.settings
+    }
 
 
 # ── Candles (proxy to MT5 worker — only on Windows) ──────────────────────────
@@ -672,8 +774,12 @@ async def get_candles(req: CandlesRequest, user: User = Depends(get_current_user
             })
             continue
 
-        # Fallback to local MT5 if available (for backwards compatibility/development)
-        if MT5_AVAILABLE and mt5_manager.is_connected(str(user.id)):
+        # Fallback to local MT5 (Deprecated in push model, but kept for legacy logic)
+        # In push model, we rely purely on the bridge pushing to _candle_cache.
+        if MT5_AVAILABLE:
+            # We don't call mt5_manager.is_connected(str(user.id)) here anymore
+            # as the backend no longer maintains the connection.
+            pass
             TF_MAP = {
                 "M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15,
                 "M30": mt5.TIMEFRAME_M30, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4,
@@ -723,6 +829,35 @@ async def ws_mt5(ws: WebSocket):
     except WebSocketDisconnect:
         if user_id in _ws_clients and ws in _ws_clients[user_id]:
             _ws_clients[user_id].remove(ws)
+
+
+# ── Bridge WebSocket (Price/Candle Pushes) ───────────────────────────────────
+@app.websocket("/ws/bridge/prices")
+async def ws_bridge_prices(ws: WebSocket):
+    """
+    WebSocket for the MT5 Bridge (Windows) to push real-time prices & candles.
+    Uses the BRIDGE_KEY for authentication.
+    """
+    token = ws.query_params.get("token")
+    if token != BRIDGE_KEY:
+        print(f"DEBUG BRIDGE WS: Rejected connection from {ws.client}. Invalid token: {token}")
+        await ws.close(code=4003)
+        return
+        
+    await ws.accept()
+    print(f"✅ DEBUG BRIDGE WS: Connected to MT5 Bridge at {ws.client}")
+    
+    try:
+        while True:
+            data = await ws.receive_json()
+            if "prices" in data:
+                _price_cache.update(data["prices"])
+            if "candles" in data:
+                _candle_cache.update(data["candles"])
+    except WebSocketDisconnect:
+        print(f"DEBUG BRIDGE WS: MT5 Bridge disconnected: {ws.client}")
+    except Exception as e:
+        print(f"DEBUG BRIDGE WS: Error: {e}")
 
 
 # ── Journal Endpoints ─────────────────────────────────────────────────────────
@@ -842,6 +977,31 @@ async def update_alert(alert_id: str, req: AlertUpdateRequest, user: User = Depe
 @app.delete("/api/alerts/{alert_id}")
 async def delete_alert(alert_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await db.execute(delete(Alert).where(Alert.id == alert_id, Alert.user_id == user.id))
+    await db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/alerts/history")
+async def get_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(AlertHistory)
+        .where(AlertHistory.user_id == user.id)
+        .order_by(AlertHistory.triggered_at.desc())
+        .limit(100)
+    )
+    history = []
+    for h in result.scalars().all():
+        history.append({
+            "id": h.id,
+            "data": h.data,
+            "triggeredAt": h.triggered_at.isoformat()
+        })
+    return {"history": history}
+
+
+@app.delete("/api/alerts/history")
+async def clear_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(AlertHistory).where(AlertHistory.user_id == user.id))
     await db.commit()
     return {"ok": True}
 
@@ -1083,9 +1243,40 @@ async def _alert_evaluator_loop():
                                 if alert.get("frequency") == "Once":
                                     alert["enabled"] = False
                                     alert_row.data = alert
-                                    from sqlalchemy.orm.attributes import flag_modified
                                     flag_modified(alert_row, "data")
                                     await db.commit()
+
+                                # Save to History
+                                history_entry = AlertHistory(
+                                    id=str(uuid.uuid4()),
+                                    user_id=user.id,
+                                    alert_id=alert_id,
+                                    data={
+                                        "title": title,
+                                        "body": body,
+                                        "symbol": symbol,
+                                        "type": alert_type,
+                                        "alert_data": alert # snapshot
+                                    },
+                                    triggered_at=datetime.datetime.utcnow()
+                                )
+                                db.add(history_entry)
+                                
+                                # Enforce history limit
+                                limit = (user.settings.terminal_layout or {}).get("alertHistoryLimit", 50) if user.settings else 50
+                                await db.flush()
+                                
+                                # Delete old entries if exceeding limit
+                                hist_count_res = await db.execute(
+                                    select(AlertHistory).where(AlertHistory.user_id == user.id).order_by(AlertHistory.triggered_at.desc())
+                                )
+                                all_hist = hist_count_res.scalars().all()
+                                if len(all_hist) > limit:
+                                    to_delete = all_hist[limit:]
+                                    for old_h in to_delete:
+                                        await db.delete(old_h)
+                                
+                                await db.commit()
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -1189,19 +1380,6 @@ async def _news_evaluator_loop():
             print(f"⚠ News evaluator error: {e}")
             
         await asyncio.sleep(60)  # Check every minute
-
-
-# ── Health Check ──────────────────────────────────────────────────────────────
-@app.get("/api/health")
-@app.head("/api/health")
-def health_check():
-    return {"status": "ok", "version": "3.0", "cached_prices": len(_price_cache)}
-
-
-@app.get("/")
-@app.head("/")
-def root():
-    return {"status": "ok", "version": "3.0"}
 
 
 if __name__ == "__main__":

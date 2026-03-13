@@ -168,15 +168,15 @@ export function applyFilter(trades: any[], filter: any) {
       const q = filter.search.toLowerCase();
       if (!t.symbol?.toLowerCase().includes(q) && !t.ticket?.toString().includes(q)) return false;
     }
-    if (filter.status && filter.status !== "ALL" && filter.status !== "all" && t.status !== filter.status) return false;
-    if (filter.type && filter.type !== "ALL" && filter.type !== "all" && t.type !== filter.type) return false;
+    if (filter.status && filter.status !== "ALL" && filter.status !== "all" && t.status?.toLowerCase() !== filter.status?.toLowerCase()) return false;
+    if (filter.type && filter.type !== "ALL" && filter.type !== "all" && t.type?.toLowerCase() !== filter.type?.toLowerCase()) return false;
 
     return true;
   });
 }
 
 export function calcStats(trades: any[]) {
-  const closed = trades.filter((t) => t.status === "CLOSED" || t.pnl !== undefined);
+  const closed = trades.filter((t) => t.status?.toLowerCase() === "closed");
   const totalTrades = closed.length;
 
   const wins = closed.filter((t) => t.pnl > 0);
@@ -201,22 +201,31 @@ export function calcStats(trades: any[]) {
   const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
   const avgRR = avgLoss > 0 ? avgWin / avgLoss : 0;
 
-  const symbolPnL: Record<string, { pnl: number, count: number, wins: number }> = {};
+  const symbolPnL: Record<string, { pnl: number, count: number, wins: number, pips: number }> = {};
   closed.forEach(t => {
     if (t.symbol) {
-      if (!symbolPnL[t.symbol]) symbolPnL[t.symbol] = { pnl: 0, count: 0, wins: 0 };
+      if (!symbolPnL[t.symbol]) symbolPnL[t.symbol] = { pnl: 0, count: 0, wins: 0, pips: 0 };
       symbolPnL[t.symbol].pnl += (t.pnl || 0);
       symbolPnL[t.symbol].count += 1;
+      symbolPnL[t.symbol].pips += (t.pips || 0);
       if (t.pnl > 0) symbolPnL[t.symbol].wins += 1;
     }
   });
+
   const symbolStats = Object.keys(symbolPnL)
-    .map(sym => ({
-      symbol: sym,
-      pnl: symbolPnL[sym].pnl,
-      count: symbolPnL[sym].count,
-      winRate: (symbolPnL[sym].wins / symbolPnL[sym].count) * 100
-    }))
+    .map(sym => {
+      const s = symbolPnL[sym];
+      return {
+        symbol: sym,
+        pnl: s.pnl,
+        pips: s.pips,
+        count: s.count,
+        wins: s.wins,
+        losses: s.count - s.wins,
+        winRate: (s.count > 0 ? (s.wins / s.count) * 100 : 0),
+        avgPips: (s.count > 0 ? s.pips / s.count : 0)
+      };
+    })
     .sort((a, b) => b.pnl - a.pnl);
   const bestSymbol = symbolStats.length > 0 ? symbolStats[0].symbol : "N/A";
   const worstSymbol = symbolStats.length > 0 ? symbolStats[symbolStats.length - 1].symbol : "N/A";
@@ -352,7 +361,93 @@ export function calcStats(trades: any[]) {
     intradayWinRate,
     multidayWinRate,
     grossProfit,
-    grossLoss
+    grossLoss,
+    maxDrawdown: calculateMaxDrawdown(closed),
+    ...calcTimeStats(closed)
+  };
+}
+
+export function calcTimeStats(closedTrades: any[]) {
+  // Day of Week
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const dowMap: Record<string, { pnl: number; count: number; wins: number }> = {};
+  days.forEach(d => dowMap[d] = { pnl: 0, count: 0, wins: 0 });
+
+  // Hour of Day (Slots)
+  const hourSlots = ["0-3", "3-6", "6-9", "9-12", "12-15", "15-18", "18-21", "21-24"];
+  const hourMap: Record<string, { pnl: number; count: number; wins: number }> = {};
+  hourSlots.forEach(s => hourMap[s] = { pnl: 0, count: 0, wins: 0 });
+
+  // Sessions
+  const SESSION_ORDER = ["Tokyo", "Sydney", "London", "Overlap (LDN+NY)", "New York"];
+  const sessionMap: Record<string, { pnl: number; count: number; wins: number }> = {};
+  SESSION_ORDER.forEach(s => sessionMap[s] = { pnl: 0, count: 0, wins: 0 });
+
+  closedTrades.forEach(t => {
+    // DOW
+    const dateStr = t.openTimeWIB?.slice(0, 10);
+    if (dateStr) {
+      const dowIdx = new Date(dateStr + "T12:00:00").getDay();
+      const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dowIdx];
+      if (dowMap[dow]) {
+        dowMap[dow].pnl += t.pnl;
+        dowMap[dow].count++;
+        if (t.pnl > 0) dowMap[dow].wins++;
+      }
+    }
+
+    // Hour
+    const wibH = parseInt(t.openTimeWIB?.slice(11, 13) || "0", 10);
+    const slot = hourSlots[Math.floor(wibH / 3)];
+    if (slot && hourMap[slot]) {
+      hourMap[slot].pnl += t.pnl;
+      hourMap[slot].count++;
+      if (t.pnl > 0) hourMap[slot].wins++;
+    }
+
+    // Session
+    const session = t.session || "Unknown";
+    if (sessionMap[session]) {
+      sessionMap[session].pnl += t.pnl;
+      sessionMap[session].count++;
+      if (t.pnl > 0) sessionMap[session].wins++;
+    }
+  });
+
+  return {
+    byDow: days.map(d => ({ day: d, pnl: Number(dowMap[d].pnl.toFixed(2)), count: dowMap[d].count, wr: dowMap[d].count ? (dowMap[d].wins / dowMap[d].count * 100) : 0 })),
+    byHour: hourSlots.map(s => ({ slot: s, pnl: Number(hourMap[s].pnl.toFixed(2)), count: hourMap[s].count, wr: hourMap[s].count ? (hourMap[s].wins / hourMap[s].count * 100) : 0 })),
+    bySession: SESSION_ORDER.map(s => ({ session: s, pnl: Number(sessionMap[s].pnl.toFixed(2)), count: sessionMap[s].count, wr: sessionMap[s].count ? (sessionMap[s].wins / sessionMap[s].count * 100) : 0 })),
+  };
+}
+
+export function calculateMaxDrawdown(trades: any[]) {
+  if (!trades.length) return { amount: 0, percent: 0 };
+
+  let peak = 0;
+  let currentEquity = 0;
+  let maxDD = 0;
+
+  // Use a fixed starting balance for percentage calculation if possible, or relative to peak
+  // Since we don't always have initial balance, we calculate drawdown from equity peak
+  const sortedTrades = [...trades].sort((a, b) =>
+    new Date(a.closeTime || 0).getTime() - new Date(b.closeTime || 0).getTime()
+  );
+
+  for (const t of sortedTrades) {
+    currentEquity += (t.pnl || 0);
+    if (currentEquity > peak) {
+      peak = currentEquity;
+    }
+    const dd = peak - currentEquity;
+    if (dd > maxDD) {
+      maxDD = dd;
+    }
+  }
+
+  return {
+    amount: maxDD,
+    percent: peak > 0 ? (maxDD / peak) * 100 : (maxDD > 0 ? 100 : 0)
   };
 }
 

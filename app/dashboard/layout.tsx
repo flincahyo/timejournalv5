@@ -1,10 +1,17 @@
-﻿"use client";
+"use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuthStore, useMT5Store, useJournalStore, useAlertStore, useNewsStore } from "@/store";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuthStore, useMT5Store, useJournalStore, useAlertStore, useNewsStore, useTerminalStore, useUIStore, useFilteredTrades } from "@/store";
+import SideDrawer from "@/components/ui/SideDrawer";
+import MT5ConnectModal from "@/components/modals/MT5ConnectModal";
+import FilterModal from "@/components/filters/FilterModal";
+import DateRangeModal from "@/components/filters/DateRangeModal";
+import AddTradeModal from "@/components/modals/AddTradeModal";
+import AIAnalystContent from "@/components/modals/AIAnalystContent";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import MobileTabBar from "@/components/layout/MobileTabBar";
+import AccountModal from "@/components/modals/AccountModal";
 import { useMT5Sync } from "@/hooks/useMT5Sync";
 import { authGetMe } from "@/lib/auth";
 import { getToken } from "@/lib/api";
@@ -20,8 +27,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { fetchJournal } = useJournalStore();
   const { fetchAlerts } = useAlertStore();
   const { loadFromServer: loadNewsSettings } = useNewsStore();
+  const { loadLayoutFromServer } = useTerminalStore();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const { activeDrawer, closeDrawer, openDrawer } = useUIStore();
+  const { all, stats } = useFilteredTrades();
 
   useEffect(() => {
     // Clear any stale meta theme-color set by login page, so the
@@ -32,32 +42,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function bootstrap() {
       if (user) {
         // Already have user in memory — load server data
-        await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings()]);
+        await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer()]);
         setReady(true);
         return;
       }
       const token = getToken();
       if (!token) {
+        // Clear local settings to prevent seeing previous user's layout/theme
+        loadLayoutFromServer();
+        loadNewsSettings();
         router.replace("/login");
         return;
       }
       // Validate token against server and restore session
       const me = await authGetMe();
       if (!me) {
+        loadLayoutFromServer();
+        loadNewsSettings();
         router.replace("/login");
         return;
       }
-      setUser({ id: me.id, email: me.email, name: me.name, provider: "credentials", createdAt: me.createdAt });
+      setUser({ id: me.id, email: me.email, name: me.name, image: me.image, provider: "credentials", createdAt: me.createdAt });
       // Load all server data in parallel after auth confirmed
-      await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings()]);
+      await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer()]);
       setReady(true);
     }
     bootstrap();
   }, []);
 
-  useEffect(() => {
-    if (ready && !user) router.replace("/login");
-  }, [user, ready]);
+  const pathname = usePathname();
+  const isTerminal = pathname === "/dashboard/terminal";
 
   if (!ready) return (
     <div className="min-h-screen flex items-center justify-center bg-bg">
@@ -70,20 +84,80 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <DataLoader>
-      <div className="flex h-screen overflow-hidden">
-        {/* Hide Sidebar on mobile */}
-        <div className="hidden md:block">
-          <Sidebar />
-        </div>
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <Topbar />
-          <main className="flex-1 overflow-y-auto overflow-x-hidden md:pb-0 pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      <div className="flex flex-col h-screen overflow-hidden bg-bg">
+        {/* Global Top Header */}
+        <Topbar />
+
+        <div className="flex flex-1 overflow-hidden relative">
+          {/* Contextual Sidebar - fixed below Topbar */}
+          <div className="hidden md:block shrink-0">
+            <Sidebar />
+          </div>
+
+          {/* Main Content Area */}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden md:pb-0 pb-[calc(4rem+env(safe-area-inset-bottom))] relative">
             {children}
           </main>
         </div>
+
         {/* Mobile bottom tab bar */}
         <MobileTabBar />
       </div>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'account'}
+        onClose={closeDrawer}
+        title="Account Settings"
+        subtitle="Manage your profile and security"
+        noPadding
+      >
+        <AccountModal isOpen={activeDrawer === 'account'} onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'add_trade'}
+        onClose={closeDrawer}
+        title="Add Trade Manual"
+        subtitle="Log a new trade record manually"
+      >
+        <AddTradeModal onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'mt5_connect'}
+        onClose={closeDrawer}
+        title="Broker Connection"
+        subtitle="Sync with MetaTrader 5"
+      >
+        <MT5ConnectModal onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'filter'}
+        onClose={closeDrawer}
+        title="Filter Trades"
+        subtitle="Refine your trade list"
+      >
+        <FilterModal trades={all} onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'date_range'}
+        onClose={closeDrawer}
+        title="Date Range"
+        subtitle="Select a specific time period"
+      >
+        <DateRangeModal onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'ai_analyst'}
+        onClose={closeDrawer}
+        title="AI Market Analyst"
+        subtitle="Objective performance insights"
+      >
+        <AIAnalystContent stats={stats} closedTrades={all.filter(t => t.status === 'closed')} onClose={closeDrawer} />
+      </SideDrawer>
     </DataLoader>
   );
 }

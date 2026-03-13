@@ -6,7 +6,8 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Boolean, Float, Integer, BigInteger, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Boolean, Float, Integer, BigInteger, Text, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,19 +34,22 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    image: Mapped[str | None] = mapped_column(Text, nullable=True) # Avatar URL or SVG key
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    mt5_connections: Mapped[list["MT5Connection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    mt5_accounts: Mapped[list["MT5Account"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     trades: Mapped[list["Trade"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     journal_notes: Mapped[list["JournalNote"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     journal_tags: Mapped[list["JournalTag"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_tags: Mapped[list["DailyTag"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    alert_history: Mapped[list["AlertHistory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     settings: Mapped["UserSettings | None"] = relationship(back_populates="user", cascade="all, delete-orphan", uselist=False)
+    public_shares: Mapped[list["PublicShare"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
-class MT5Connection(Base):
-    __tablename__ = "mt5_connections"
+class MT5Account(Base):
+    __tablename__ = "mt5_accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
@@ -53,23 +57,28 @@ class MT5Connection(Base):
     server: Mapped[str] = mapped_column(String(255), nullable=False)
     # password stored encrypted — never plain text
     encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     last_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    account_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    account_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, server_default="now()")
 
-    user: Mapped["User"] = relationship(back_populates="mt5_connections")
+    user: Mapped["User"] = relationship(back_populates="mt5_accounts")
+    trades: Mapped[list["Trade"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+
+    __table_args__ = (UniqueConstraint('user_id', 'login', 'server', name='_user_account_uc'),)
 
 
 class Trade(Base):
     __tablename__ = "trades"
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # MT5 ticket as string
+    ticket: Mapped[str] = mapped_column(String(64), primary_key=True) # MT5 ticket number
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("mt5_accounts.id"), primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    data: Mapped[dict] = mapped_column(JSON, nullable=False)  # full trade JSON blob
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False) # full trade JSON blob
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="trades")
+    account: Mapped["MT5Account"] = relationship(back_populates="trades")
 
 
 class JournalNote(Base):
@@ -110,22 +119,51 @@ class Alert(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    data: Mapped[dict] = mapped_column(JSON, nullable=False)  # full alert JSON blob
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)  # full alert JSON blob
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="alerts")
+
+
+class AlertHistory(Base):
+    __tablename__ = "alert_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    alert_id: Mapped[str | None] = mapped_column(String(36), nullable=True) # Optional link
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False) # Snapshot of alert
+    triggered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="alert_history")
 
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), primary_key=True)
-    theme: Mapped[str] = mapped_column(String(20), default="light")
-    news_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    theme: Mapped[str] = mapped_column(String(20), default="light", nullable=False, server_default="'light'")
+    news_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default="'{}'")
+    terminal_layout: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     expo_push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default="now()")
 
     user: Mapped["User"] = relationship(back_populates="settings")
+
+
+class PublicShare(Base):
+    __tablename__ = "public_shares"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("mt5_accounts.id"), nullable=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False) # 'dashboard', 'calendar'
+    settings: Mapped[dict] = mapped_column(JSONB, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="public_shares")
 
 
 # ── DB Session Dependency ──────────────────────────────────────────────────────
@@ -146,9 +184,41 @@ async def init_db():
     """Create all tables on startup."""
     from sqlalchemy import text
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Try to add the column if it doesn't exist
+        # Check if mt5_connections exists and needs renaming to mt5_accounts
         try:
-            await conn.execute(text("ALTER TABLE user_settings ADD COLUMN expo_push_token VARCHAR(255);"))
-        except Exception:
-            pass
+            res = await conn.execute(text("SELECT to_regclass('public.mt5_connections');"))
+            if res.scalar():
+                await conn.execute(text("ALTER TABLE mt5_connections RENAME TO mt5_accounts;"))
+                print("✅ Renamed mt5_connections to mt5_accounts")
+        except Exception as e:
+            print(f"Table rename check failed: {e}")
+
+        await conn.run_sync(Base.metadata.create_all)
+        # Safe migrations — ensure columns exist with correct types and defaults
+        for stmt in [
+            "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS expo_push_token VARCHAR(255);",
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS image TEXT;",
+            "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS terminal_layout JSONB;",
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES mt5_accounts(id);",
+            # Rename column if needed (careful here)
+            "ALTER TABLE trades RENAME COLUMN id TO ticket;" if "ticket" not in [None] else "", # Placeholder for logic
+            # Ensure proper defaults for existing rows to prevent NOT NULL violations
+            "ALTER TABLE user_settings ALTER COLUMN theme SET DEFAULT 'light';",
+            "ALTER TABLE user_settings ALTER COLUMN theme SET NOT NULL;",
+            "ALTER TABLE user_settings ALTER COLUMN news_settings SET DEFAULT '{}';",
+            "ALTER TABLE user_settings ALTER COLUMN news_settings SET NOT NULL;",
+            "ALTER TABLE user_settings ALTER COLUMN updated_at SET DEFAULT now();",
+            "ALTER TABLE user_settings ALTER COLUMN updated_at SET NOT NULL;",
+            # Convert existing JSON to JSONB and ensure defaults
+            "ALTER TABLE user_settings ALTER COLUMN news_settings TYPE JSONB USING news_settings::jsonb;",
+            "ALTER TABLE mt5_accounts ALTER COLUMN account_info TYPE JSONB USING account_info::jsonb;",
+            "ALTER TABLE trades ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+            "ALTER TABLE alerts ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+            "ALTER TABLE alert_history ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+        ]:
+            if not stmt: continue
+            try:
+                await conn.execute(text(stmt))
+            except Exception as e:
+                print(f"Migration step failed: {stmt} -> {e}")

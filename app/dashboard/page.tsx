@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useFilteredTrades, useMT5Store } from "@/store";
+import { useFilteredTrades, useMT5Store, useUIStore } from "@/store";
 import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
 import ReactMarkdown from "react-markdown";
@@ -23,9 +23,9 @@ function DonutChart({ wins, losses, total }: { wins: number; losses: number; tot
 
   // Segments: Win (blue) → Loss (orange) → Breakeven (gray)
   const segments = [
-    { frac: winFrac, color: "#2563eb", label: "Win" },
-    { frac: lossFrac, color: "#f97316", label: "Loss" },
+    { frac: winFrac, color: "#2563eb", label: "Win" }, // Blue 600
     { frac: beFrac, color: "var(--surface3)", label: "BE" },
+    { frac: lossFrac, color: "#f97316", label: "Loss" }, // Orange 600
   ].filter(s => s.frac > 0.001);
 
   let offset = circ * 0.25; // start from top
@@ -89,10 +89,10 @@ function KpiCard({ label, value, sub, subPos, index = 0 }: {
   label: string; value: string; sub: string; subPos: boolean; index?: number;
 }) {
   return (
-    <div className="card au p-4" style={{ animationDelay: `${index * .07}s` }}>
-      <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase mb-1.5">{label}</div>
+    <div className="card border border-border bg-surface p-4 rounded-xl shadow-sm transition-all hover:border-accent/40" style={{ animationDelay: `${index * .07}s` }}>
+      <div className="text-[10px] font-bold text-text3 tracking-[.1em] uppercase mb-1.5 opacity-60">{label}</div>
       <div className="text-[22px] font-extrabold text-text tracking-[-0.6px] leading-tight mb-2">{value}</div>
-      <div className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${subPos ? 'text-green' : 'text-red'}`}>
+      <div className={`text-[11px] font-bold flex items-center gap-1.5 ${subPos ? 'text-green' : 'text-red'}`}>
         <span className="text-[8px]">{subPos ? "▲" : "▼"}</span>{sub}
       </div>
     </div>
@@ -107,9 +107,7 @@ export default function DashboardPage() {
   const { filtered, stats } = useFilteredTrades();
   const { isConnected, account } = useMT5Store();
   const [mounted, setMounted] = useState(false);
-  const [aiInsights, setAiInsights] = useState("");
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const { openDrawer } = useUIStore();
   useEffect(() => setMounted(true), []);
 
   // ⚠️ ALL hooks MUST be before any return — React rules of hooks
@@ -160,6 +158,13 @@ export default function DashboardPage() {
 
   const [flippedCard, setFlippedCard] = useState(false);
   const [flippedPipsCard, setFlippedPipsCard] = useState(false);
+  const [flippedGrowthCard, setFlippedGrowthCard] = useState(false);
+
+  // Growth calculation: (Total PnL / Initial Balance) * 100
+  // Initial Balance = Current Balance - Total PnL
+  const currentBalance = account?.balance || 0;
+  const initialBalance = currentBalance - stats.totalPnl;
+  const growthPercent = initialBalance > 0 ? (stats.totalPnl / initialBalance) * 100 : 0;
 
   const pipsBySymbol = useMemo(() => {
     const m: Record<string, { pips: number; count: number }> = {};
@@ -176,7 +181,7 @@ export default function DashboardPage() {
   }, [closed]);
 
   const symData = useMemo(() =>
-    Object.values(stats.symbolStats ?? {}).sort((a, b) => b.pnl - a.pnl).slice(0, 5)
+    (stats.symbolStats ?? []).slice(0, 5)
     , [stats]);
 
   const sessData = useMemo(() => {
@@ -208,44 +213,6 @@ export default function DashboardPage() {
     return Object.entries(m).sort(([a], [b]) => b.localeCompare(a));
   }, [closed]);
 
-  const generateAIInsights = async () => {
-    if (!stats || stats.totalTrades === 0) {
-      alert("Belum ada data trading yang cukup untuk dianalisis oleh AI.");
-      return;
-    }
-
-    setIsGeneratingAI(true);
-    setAiInsights("");
-
-    // Determine recent streak roughly
-    const recentTrades = closed.slice(0, 10);
-    const recentWins = recentTrades.filter(t => t.pnl > 0).length;
-    const streakCtx = recentTrades.length ? `${recentWins} wins out of last ${recentTrades.length} trades.` : "No recent trades.";
-
-    try {
-      const payload = {
-        totalTrades: stats.totalTrades,
-        winRate: stats.winRate,
-        totalPnl: stats.totalPnl,
-        bestSymbol: stats.bestSymbol,
-        worstSymbol: stats.worstSymbol,
-        recentStreaks: streakCtx,
-        notes: `Avg RR is ${stats.avgRR.toFixed(2)}, Longs: ${stats.longWins}/${stats.longWins + stats.longLosses || 0} wins, Shorts: ${stats.shortWins}/${stats.shortWins + stats.shortLosses || 0} wins.`
-      };
-
-      const data = await apiPost<any>("/api/ai/analyze", payload);
-      if (data.success) {
-        setAiInsights(data.insight);
-      } else {
-        setAiInsights("[ERROR] AI Agent gagal memberikan analisis. Cek koneksi backend/API Key Gemini.");
-      }
-    } catch (err) {
-      console.error("AI Error:", err);
-      setAiInsights("[ERROR] Terjadi kesalahan saat menghubungi API AI Analyst.");
-    } finally {
-      setIsGeneratingAI(false);
-    }
-  };
 
   if (!mounted) return (
     <div className="p-7">
@@ -257,7 +224,7 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="p-4 md:p-7 pb-24 md:pb-10 max-w-8xl mx-auto">
+    <div className="p-4 px-5 md:p-7 pb-24 md:pb-10 max-w-8xl mx-auto">
 
       {/* â”€â”€ Page header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="au mb-6.5">
@@ -270,7 +237,7 @@ export default function DashboardPage() {
           </h1>
           <div className="flex gap-2 items-center">
             <button
-              onClick={() => setIsAiModalOpen(true)}
+              onClick={() => openDrawer('ai_analyst')}
               className="ai-btn flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold shadow-md cursor-pointer shrink-0"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="relative z-10"><path d="M12 2a10 10 0 1 0 10 10H12V2z" /><path d="M12 12 2.1 12" /><path d="M12 12 21.9 12" /><path d="M12 12 12 21.9" /><path d="M12 12 12 2.1" /></svg>
@@ -298,35 +265,35 @@ export default function DashboardPage() {
 
       {/* ── ROW 1: 4 KPI cards ────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-3.5">
-        <KpiCard index={0} label="Total PnL" value={fmtUSD(stats.totalPnl)} sub={`${stats.wins}W / ${stats.losses}L`} subPos={stats.totalPnl >= 0} />
-        {/* Total Pips flip card */}
+
+        {/* Total PnL flip card */}
         <div
           className="flip-card au card cursor-pointer"
-          style={{ animationDelay: "0.07s", minHeight: "110px" }}
+          style={{ animationDelay: "0s", minHeight: "110px" }}
           onClick={() => setFlippedPipsCard(f => !f)}
         >
           <div className={`flip-card-inner${flippedPipsCard ? " flipped" : ""}`}>
-            {/* FRONT — summary */}
+            {/* FRONT — PnL summary */}
             <div className="flip-card-front p-4 flex flex-col justify-between h-full">
               <div className="flex items-center justify-between">
-                <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase">Total Pips</div>
-                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">per symbol ↻</span>
+                <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase">Total PnL</div>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">pips / sym ↻</span>
               </div>
               <div className="text-[22px] font-extrabold text-text tracking-[-0.6px] leading-tight my-1">
-                {(stats.totalPips ?? 0) >= 0 ? "+" : ""}{(stats.totalPips ?? 0).toFixed(1)}
+                {fmtUSD(stats.totalPnl)}
               </div>
-              <div className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${(stats.totalPips ?? 0) >= 0 ? "text-green" : "text-red"}`}>
-                <span className="text-[8px]">{(stats.totalPips ?? 0) >= 0 ? "▲" : "▼"}</span>
-                Avg {(stats.avgPips ?? 0).toFixed(1)} pips/trade
+              <div className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${stats.totalPnl >= 0 ? "text-green" : "text-red"}`}>
+                <span className="text-[8px]">{stats.totalPnl >= 0 ? "▲" : "▼"}</span>
+                {stats.wins}W / {stats.losses}L
               </div>
             </div>
-            {/* BACK — per symbol */}
+            {/* BACK — per symbol pips (Moved here) */}
             <div className="flip-card-back p-4 flex flex-col h-full">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] font-bold text-text uppercase tracking-[.05em]">Pips / Symbol</div>
-                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">total ↻</span>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">pnl ↻</span>
               </div>
-              <div className="flex flex-col gap-1.5 overflow-y-auto flex-1">
+              <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 scrollbar-none">
                 {pipsBySymbol.length === 0 && <span className="text-text3 text-[10px]">No data</span>}
                 {pipsBySymbol.map(({ sym, pips }) => {
                   const maxAbs = Math.max(...pipsBySymbol.map(d => Math.abs(d.pips)), 1);
@@ -349,6 +316,45 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Growth vs Drawdown flip card */}
+        <div
+          className="flip-card au card cursor-pointer"
+          style={{ animationDelay: "0.07s", minHeight: "110px" }}
+          onClick={() => setFlippedGrowthCard(f => !f)}
+        >
+          <div className={`flip-card-inner${flippedGrowthCard ? " flipped" : ""}`}>
+            {/* FRONT — Growth */}
+            <div className="flip-card-front p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase">Account Growth</div>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">drawdown ↻</span>
+              </div>
+              <div className="text-[22px] font-extrabold text-text tracking-[-0.6px] leading-tight my-1">
+                {growthPercent >= 0 ? "+" : ""}{growthPercent.toFixed(1)}%
+              </div>
+              <div className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${growthPercent >= 0 ? "text-green" : "text-red"}`}>
+                <span className="text-[8px]">{growthPercent >= 0 ? "▲" : "▼"}</span>
+                since account inception
+              </div>
+            </div>
+            {/* BACK — Max Drawdown */}
+            <div className="flip-card-back p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold text-text3 tracking-[.06em] uppercase">Max Drawdown</div>
+                <span className="text-[8px] text-text3 bg-surface2 border border-border rounded-full px-1.5 py-0.5 font-medium">growth ↻</span>
+              </div>
+              <div className="text-[22px] font-extrabold text-red tracking-[-0.6px] leading-tight my-1">
+                {(stats.maxDrawdown?.percent || 0).toFixed(1)}%
+              </div>
+              <div className="text-[11.5px] font-semibold text-text3 flex items-center gap-1.5">
+                <span className="text-[8px]">▼</span>
+                from peak equity
+              </div>
+            </div>
+          </div>
+        </div>
+
         <KpiCard index={2} label="Profit Factor" value={stats.profitFactor.toFixed(2) + "×"} sub={`EV ${fmtUSD(stats.expectedValue)}`} subPos={stats.profitFactor >= 1} />
         <KpiCard index={3} label="Win Rate" value={stats.winRate.toFixed(1) + "%"} sub={`${stats.totalTrades} total trades`} subPos={stats.winRate >= 50} />
       </div>
@@ -393,11 +399,11 @@ export default function DashboardPage() {
             <div className="text-right">
               <div className="flex gap-4">
                 <div className="flex items-center gap-1.25">
-                  <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-blue ring-1 ring-blue/20" />
+                  <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-green ring-1 ring-green/20" />
                   <span className="text-[11px] text-text2">Profit: ${stats.grossProfit.toFixed(0)}</span>
                 </div>
                 <div className="flex items-center gap-1.25">
-                  <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-orange ring-1 ring-orange/20" />
+                  <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-red ring-1 ring-red/20" />
                   <span className="text-[11px] text-text2">Loss: ${stats.grossLoss.toFixed(0)}</span>
                 </div>
               </div>
@@ -407,15 +413,15 @@ export default function DashboardPage() {
             <AreaChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="eqG" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={stats.totalPnl >= 0 ? "#2563eb" : "#f97316"} stopOpacity={.22} />
-                  <stop offset="95%" stopColor={stats.totalPnl >= 0 ? "#2563eb" : "#f97316"} stopOpacity={0} />
+                  <stop offset="5%" stopColor="#2563eb" stopOpacity={.2} />
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="4 4" />
               <XAxis dataKey="d" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={50} tickFormatter={v => `$${v}`} />
               <Tooltip content={<CTip />} />
-              <Area type="monotone" dataKey="v" stroke={stats.totalPnl >= 0 ? "#2563eb" : "#f97316"} strokeWidth={2} fill="url(#eqG)" dot={false} />
+              <Area type="monotone" dataKey="v" stroke="#2563eb" strokeWidth={2.5} fill="url(#eqG)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -479,7 +485,7 @@ export default function DashboardPage() {
                   <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={46} tickFormatter={v => `$${v}`} />
                   <Tooltip content={<CTip />} />
                   <Bar dataKey="pnl" radius={[5, 5, 0, 0]}>
-                    {monthlyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#2563eb" : "#f97316"} />)}
+                    {monthlyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#2563eb" : "#dc2626"} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -499,7 +505,7 @@ export default function DashboardPage() {
                   <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={46} tickFormatter={v => `$${v}`} />
                   <Tooltip content={<CTip />} />
                   <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                    {weeklyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#4f81c7" : "#b0793a"} />)}
+                    {weeklyData.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? "#2563eb" : "#dc2626"} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -574,73 +580,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      {/* â”€â”€ AI Analyst Modal â”€â”€ */}
-      {isAiModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-surface/80 backdrop-blur-sm overflow-hidden animate-in fade-in duration-200">
-          <div className="bg-surface2 border border-border w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-xl overflow-hidden relative">
-            <div className="p-5 border-b border-border flex justify-between items-center bg-surface shrink-0">
-              <h2 className="text-[16px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue flex items-center gap-2">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent"><path d="M12 2a10 10 0 1 0 10 10H12V2z" /><path d="M12 12 2.1 12" /><path d="M12 12 21.9 12" /><path d="M12 12 12 21.9" /><path d="M12 12 12 2.1" /></svg>
-                AI Analyst
-              </h2>
-              <button onClick={() => setIsAiModalOpen(false)} className="w-8 h-8 rounded-full bg-surface3 flex flex-col items-center justify-center hover:bg-surface3/80 transition-colors">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-
-            <div className="p-6 flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center">
-              {!aiInsights && !isGeneratingAI && (
-                <div className="flex flex-col items-center justify-center text-center py-12 px-4 flex-1">
-                  <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-4 text-accent">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z" /><path d="M12 12 2.1 12" /><path d="M12 12 21.9 12" /><path d="M12 12 12 21.9" /><path d="M12 12 12 2.1" /></svg>
-                  </div>
-                  <h3 className="text-[15px] font-bold text-text mb-2">Evaluasi Performa Terkini</h3>
-                  <p className="text-[13px] text-text3 mb-6 max-w-sm">
-                    AI Analyst akan membaca rasio kemenangan, PnL per instrumen, streak, dan histori psikologismu untuk memberikan _insights_ objektif secara *real-time*.
-                  </p>
-                  <button
-                    onClick={generateAIInsights}
-                    disabled={closed.length === 0}
-                    className="flex items-center gap-2 bg-text text-bg px-5 py-2.5 rounded-full text-[13px] font-bold shadow-md hover:scale-105 hover:bg-accent hover:text-white transition-all disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="2" x2="12" y2="12" /><line x1="12" y1="12" x2="22" y2="12" /><path d="M12 22a10 10 0 1 1 10-10" /></svg>
-                    Mulai Auto-Analisis
-                  </button>
-                  {closed.length === 0 && <span className="text-[11px] text-red mt-3">Belum ada riwayat profit/loss terekam.</span>}
-                </div>
-              )}
-
-              {isGeneratingAI && (
-                <div className="flex flex-col items-center justify-center py-20 flex-1 gap-6">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce"></div>
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-[13px] font-bold text-text tracking-wide animate-pulse">Mengevaluasi Emosi & Performa...</span>
-                    <span className="text-[11px] text-text3 font-medium">Ini hanya membutuhkan beberapa detik</span>
-                  </div>
-                </div>
-              )}
-
-              {aiInsights && !isGeneratingAI && (
-                <div className="w-full bg-white border border-border rounded-xl p-6 text-[13.5px] text-text2 leading-relaxed prose prose-sm prose-p:my-2 prose-ul:my-2 prose-li:my-1 max-w-none animate-in slide-in-from-bottom-2 fade-in">
-                  <ReactMarkdown>{aiInsights}</ReactMarkdown>
-                </div>
-              )}
-            </div>
-            {aiInsights && !isGeneratingAI && (
-              <div className="p-4 border-t border-border bg-surface flex justify-end shrink-0">
-                <button onClick={generateAIInsights} className="text-[12px] font-bold text-text2 bg-surface2 border border-border hover:bg-surface3 px-4 py-2 flex items-center gap-2 rounded-full cursor-pointer transition-colors">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
-                  Refresh
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

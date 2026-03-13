@@ -94,7 +94,7 @@ export default function JournalPage() {
   }, [closed]);
 
   return (
-    <div className="fade-in p-4 md:p-7 pb-10 max-w-[1240px] mx-auto flex flex-col h-[calc(100vh-var(--topbar-h))] md:h-auto overflow-hidden md:overflow-visible">
+    <div className="fade-in p-4 md:p-7 pb-10 max-w-[1240px] mx-auto flex flex-col md:h-auto overflow-visible">
       {/* Header & Filters */}
       <h1 className="text-2xl font-extrabold text-text tracking-[-0.8px] leading-tight mb-5 shrink-0">Journal</h1>
 
@@ -123,10 +123,10 @@ export default function JournalPage() {
         </div>
       </div>
 
-      <div className="flex flex-col-reverse lg:grid lg:grid-cols-[1fr_260px] gap-5 flex-1 min-h-0 overflow-hidden md:overflow-visible">
+      <div className="flex flex-col lg:grid lg:grid-cols-[1fr_260px] gap-5 flex-1 min-h-0 overflow-visible">
 
         {/* Main Timeline Column */}
-        <div className="flex flex-col gap-4 overflow-y-auto scrollbar-thin lg:overflow-visible">
+        <div className="flex flex-col gap-4 md:overflow-y-auto scrollbar-thin lg:overflow-visible">
           {dailyData.length === 0 && (
             <div className="card p-12 text-center text-text3 text-[13px]">Belum ada riwayat trade.</div>
           )}
@@ -269,7 +269,7 @@ export default function JournalPage() {
                         <h4 className="text-[12px] font-bold text-text mb-3">Trades ({d.trades.length})</h4>
                         <div className="overflow-x-auto overflow-y-auto max-h-[300px] scrollbar-thin border border-border rounded-lg">
                           <table className="w-full text-left border-collapse">
-                            <thead className="sticky top-0 z-10 shadow-sm after:absolute after:inset-x-0 after:bottom-0 after:h-[1px] after:bg-border bg-surface2/95 backdrop-blur-md">
+                            <thead className="sticky top-0 z-10 shadow-sm after:absolute after:inset-x-0 after:bottom-0 after:h-[1px] after:bg-border bg-surface2/95">
                               <tr>
                                 <th className="py-2 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">Time</th>
                                 <th className="py-2 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">Asset</th>

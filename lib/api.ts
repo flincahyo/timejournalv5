@@ -49,11 +49,12 @@ export async function apiGet<T>(path: string): Promise<T> {
     return handleResponse<T>(res);
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body?: unknown, fetchOptions?: RequestInit): Promise<T> {
     const res = await fetch(`${BACKEND_URL}${path}`, {
         method: "POST",
         headers: buildHeaders(),
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        ...fetchOptions,
     });
     return handleResponse<T>(res);
 }

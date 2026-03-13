@@ -60,43 +60,37 @@ export default function AddTradeModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[2000] flex items-center justify-center backdrop-blur-md transition-all duration-300" onClick={onClose}>
-      <div className="fade-in bg-surface rounded-2xl p-8 w-[560px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-8">
-          <div className="text-base font-bold text-text">Tambah Trade Manual</div>
-          <button onClick={onClose} className="text-text3 text-[22px] hover:text-text transition-colors">×</button>
-        </div>
-        <div className="flex flex-col gap-3.5">
-          <div className="grid grid-cols-2 gap-3">
-            {field("Symbol", "symbol", "text", PAIRS_LIST)}
-            {field("Arah", "type", "text", ["BUY", "SELL"])}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {field("Lots", "lots", "number")}
-            {field("Open (WIB)", "openTime", "datetime-local")}
-            {field("Close (WIB)", "closeTime", "datetime-local")}
-          </div>
-          <div className="grid grid-cols-4 gap-3">
-            {field("Entry Price", "openPrice", "number")}
-            {field("Exit Price", "closePrice", "number")}
-            {field("SL (price)", "sl", "number")}
-            {field("TP (price)", "tp", "number")}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {field("PnL ($)", "pnl", "number")}
-            {field("Session", "session", "text", SESSIONS_LIST)}
-            {field("Setup", "setup", "text", SETUPS_LIST)}
-          </div>
-          <div className="mb-3">{field("Emotion", "emotion", "text", EMOTIONS_LIST)}</div>
-          <div>
-            <label className={lbl}>Notes</label>
-            <textarea value={form.note} onChange={e => set("note", e.target.value)} className={`${inp} h-16 resize-y`} />
-          </div>
-        </div>
-        <div className="flex gap-2.5 mt-5 justify-end">
-          <button onClick={onClose} className="btn-outline">Cancel</button>
-          <button onClick={handleSave} className="btn-dark">Simpan Trade</button>
-        </div>
+    <div className="flex flex-col gap-3.5" onClick={e => e.stopPropagation()}>
+      <div className="grid grid-cols-2 gap-3">
+        {field("Symbol", "symbol", "text", PAIRS_LIST)}
+        {field("Arah", "type", "text", ["BUY", "SELL"])}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {field("Lots", "lots", "number")}
+        {field("PnL ($)", "pnl", "number")}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {field("Open (WIB)", "openTime", "datetime-local")}
+        {field("Close (WIB)", "closeTime", "datetime-local")}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {field("Entry", "openPrice", "number")}
+        {field("Exit", "closePrice", "number")}
+        {field("SL", "sl", "number")}
+        {field("TP", "tp", "number")}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {field("Session", "session", "text", SESSIONS_LIST)}
+        {field("Setup", "setup", "text", SETUPS_LIST)}
+      </div>
+      <div className="">{field("Emotion", "emotion", "text", EMOTIONS_LIST)}</div>
+      <div>
+        <label className={lbl}>Notes</label>
+        <textarea value={form.note} onChange={e => set("note", e.target.value)} className={`${inp} h-16 resize-y`} />
+      </div>
+      <div className="flex gap-2.5 mt-4">
+        <button onClick={onClose} className="flex-1 btn-outline">Cancel</button>
+        <button onClick={handleSave} className="flex-1 btn-dark">Simpan Trade</button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-﻿// â”€â”€ Trade Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export type TradeDirection = "BUY" | "SELL";
-export type TradeStatus = "closed" | "live";
+// â”€â”€ Trade Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export type TradeDirection = "BUY" | "SELL" | "BUY LIMIT" | "SELL LIMIT" | "BUY STOP" | "SELL STOP" | "BUY STOP LIMIT" | "SELL STOP LIMIT";
+export type TradeStatus = "closed" | "live" | "pending";
 export type CloseType = "all" | "target_hit" | "stopped_out" | "manually_closed";
 
 export interface Trade {
@@ -32,6 +32,7 @@ export interface Trade {
   closeType: CloseType;
   durationMs: number;     // trade duration in ms
   isIntraday: boolean;
+  currentPrice?: number;
 }
 
 // â”€â”€ Account Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -95,7 +96,7 @@ export interface TradeStats {
   equityCurve?: { d: string; v: number }[];
   // Symbol stats
   numberOfSymbols: number;
-  symbolStats: Record<string, SymbolStat>;
+  symbolStats: SymbolStat[];
 }
 
 export interface SymbolStat {
@@ -147,17 +148,18 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  image?: string;
+  image?: string | null;
   provider: "google" | "credentials";
   createdAt: string;
 }
 
-export interface MT5Connection {
+export interface MT5AccountSession {
+  id: number;
   userId: string;
   login: number;
   server: string;
-  connectedAt: string;
-  lastSync: string;
+  isActive: boolean;
+  lastSync: string | null;
   account: MT5Account | null;
 }
 

@@ -127,7 +127,7 @@ export function AlertWatcher() {
             {activeToasts.map(toast => (
                 <div
                     key={toast.id}
-                    className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] glass-panel border backdrop-blur-md min-w-[320px] max-w-[400px] animate-in slide-in-from-top-4 fade-in duration-300"
+                    className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] bg-surface border min-w-[320px] max-w-[400px] animate-in slide-in-from-top-4 fade-in duration-300"
                     style={{ borderColor: toast.type === 'bullish' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)' }}
                 >
                     <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-inner" style={{ backgroundColor: toast.type === 'bullish' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)' }}>

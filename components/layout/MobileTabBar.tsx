@@ -7,7 +7,7 @@ const TABS = [
     {
         id: "overview",
         href: "/dashboard",
-        label: "Home",
+        label: "Dashboard",
         icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
     },
     {
@@ -43,7 +43,7 @@ export default function MobileTabBar() {
     const liveCount = trades.filter((t) => t.status === "live").length;
 
     return (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg/90 backdrop-blur-md border-t border-border z-50 flex items-center justify-around px-2 pb-safe">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 h-[unset] pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] bg-bg/75 backdrop-blur-xl border-t border-border z-50 flex items-center justify-around px-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
             {TABS.map((tab) => {
                 const isActive = pathname === tab.href || (tab.id !== "overview" && pathname.startsWith(tab.href + "/"));
 
@@ -54,7 +54,7 @@ export default function MobileTabBar() {
                         className={`relative flex flex-col items-center justify-center w-full h-full space-y-1 ${isActive ? "text-accent" : "text-text3 hover:text-text2"
                             } transition-colors`}
                     >
-                        <div className="relative">
+                        <div className={`relative transition-transform duration-200 ${isActive ? "scale-110" : "opacity-70"}`}>
                             {tab.icon}
                             {/* Badge for Menu (if live trades) or specific tabs */}
                             {tab.id === "menu" && liveCount > 0 && (
@@ -63,7 +63,7 @@ export default function MobileTabBar() {
                                 </div>
                             )}
                         </div>
-                        <span className="text-[10px] font-medium leading-none">{tab.label}</span>
+                        <span className={`text-[10px] font-bold leading-none mt-1 transition-all ${isActive ? "opacity-100" : "opacity-60"}`}>{tab.label}</span>
                     </Link>
                 );
             })}

@@ -355,7 +355,7 @@ export default function NativeNewsPage() {
                 {/* â”€â”€ AI News Analyst Modal â”€â”€ */}
                 {
                     mounted && isAiModalOpen && createPortal(
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-surface/80 backdrop-blur-sm overflow-hidden animate-in fade-in duration-200">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-surface/80 overflow-hidden animate-in fade-in duration-200">
                             <div className="bg-surface2 border border-border w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-xl overflow-hidden relative">
                                 <div className="p-5 border-b border-border flex justify-between items-center bg-surface shrink-0">
                                     <h2 className="text-[16px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue flex items-center gap-2">

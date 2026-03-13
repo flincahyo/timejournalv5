@@ -1,5 +1,7 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { persist } from "zustand/middleware";
+export { useTerminalStore } from "./terminalStore";
+export { useUIStore } from "./uiStore";
 import { Trade, TradeFilter, MT5Account, User, Theme, DEFAULT_FILTER } from "@/types";
 import { calcStats, applyFilter, toWIB, detectSession } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete, buildWsUrl, getToken } from "@/lib/api";
@@ -10,13 +12,41 @@ interface AuthStore {
   token: string | null;
   setUser: (u: User | null) => void;
   setToken: (t: string | null) => void;
+  updateProfile: (data: { name?: string; email?: string; image?: string }) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<string>;
 }
 
-export const useAuthStore = create<AuthStore>()((set) => ({
+export const useAuthStore = create<AuthStore>()((set, get) => ({
   user: null,
   token: null,
   setUser: (user) => set({ user }),
   setToken: (token) => set({ token }),
+  updateProfile: async (data) => {
+    const res = await apiPut<User>("/api/auth/profile", data);
+    set({ user: res });
+  },
+  changePassword: async (currentPassword, newPassword) => {
+    await apiPut("/api/auth/password", { current_password: currentPassword, new_password: newPassword });
+  },
+  uploadAvatar: async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    // apiPost might need adjustment for FormData, but many fetch wrappers handle it.
+    // If apiPost doesn't, we might need a raw fetch or specialized helper.
+    // Let's assume apiPost handles FormData or add a new helper.
+    const token = getToken();
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/upload-avatar`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Gagal mengunggah foto");
+    const data = await res.json();
+    set({ user: { ...get().user!, image: data.url } });
+    return data.url;
+  },
 }));
 
 // ── MT5 Connection Store ──────────────────────────────────────────────────────
@@ -27,7 +57,9 @@ interface MT5Store {
   connectionParams: { login: number; server: string } | null;
   trades: Trade[];
   liveTrades: Trade[];
+  mt5Symbols: string[];       
   isLoading: boolean;
+  accounts: any[]; // MT5AccountSession[]
 
   setConnected: (v: boolean) => void;
   setAccount: (a: MT5Account | null) => void;
@@ -48,7 +80,11 @@ interface MT5Store {
   /** Load current MT5 status from API (for page refresh) */
   loadStatus: () => Promise<void>;
   /** Fetch all trades from DB cache */
-  fetchTrades: () => Promise<void>;
+  fetchTrades: (accountId?: number) => Promise<void>;
+  /** Manage accounts */
+  fetchAccounts: () => Promise<void>;
+  toggleAccount: (accountId: number) => Promise<void>;
+  deleteAccount: (accountId: number) => Promise<void>;
   /** Start WebSocket listener for live updates */
   startWebSocket: () => void;
 }
@@ -62,7 +98,9 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
   connectionParams: null,
   trades: [],
   liveTrades: [],
+  mt5Symbols: [],
   isLoading: false,
+  accounts: [],
 
   setConnected: (isConnected) => set({ isConnected }),
   setAccount: (account) => set({ account }),
@@ -110,6 +148,8 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           liveTrades: res.live_trades || [],
           isLoading: false,
         });
+        // Refresh accounts list
+        get().fetchAccounts();
         // Start WebSocket for live updates
         get().startWebSocket();
         return { success: true, message: res.message };
@@ -125,6 +165,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
   disconnectMT5: async () => {
     try {
       await apiPost("/api/mt5/disconnect");
+      get().fetchAccounts(); // Update status
     } catch { }
     if (_ws) { _ws.close(); _ws = null; }
     get().reset();
@@ -148,14 +189,49 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
       if (status.connected) {
         get().fetchTrades();
         get().startWebSocket();
+        // Fetch available symbols from backend cache
+        try {
+          const sym = await apiGet<{ symbols: string[] }>("/api/mt5/symbols");
+          if (sym.symbols?.length) set({ mt5Symbols: sym.symbols });
+        } catch { }
       }
     } catch { }
   },
 
-  fetchTrades: async () => {
+  fetchTrades: async (accountId) => {
     try {
-      const res = await apiGet<{ trades: Trade[] }>("/api/mt5/trades");
+      const res = await apiGet<{ trades: Trade[] }>(accountId ? `/api/mt5/trades?account_id=${accountId}` : "/api/mt5/trades");
       set({ trades: (res.trades || []).map(hydrateTrade) });
+    } catch { }
+  },
+
+  fetchAccounts: async () => {
+    try {
+      const res = await apiGet<{ accounts: any[] }>("/api/accounts");
+      set({ accounts: res.accounts || [] });
+    } catch { }
+  },
+
+  toggleAccount: async (accountId) => {
+    set({ isLoading: true });
+    try {
+      await apiPost(`/api/accounts/${accountId}/toggle`);
+      await get().loadStatus();
+      await get().fetchAccounts();
+    } catch { }
+    set({ isLoading: false });
+  },
+
+  deleteAccount: async (accountId) => {
+    if (!confirm("Are you sure? This will delete all trade history for this account.")) return;
+    try {
+      await apiDelete(`/api/accounts/${accountId}`);
+      await get().fetchAccounts();
+      // If deleted active one, reset
+      if (get().account && get().connectionParams?.login) {
+        // Logic to check if active was deleted
+        await get().loadStatus();
+      }
     } catch { }
   },
 
@@ -172,19 +248,28 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           set({ account: msg.account, lastSync: new Date().toISOString() });
         } else if (type === "live_trades") {
           set({ liveTrades: (msg.trades || []).map(hydrateTrade) });
+        } else if (type === "symbols") {
+          // Bridge pushed full symbol list for this account
+          if (msg.symbols?.length) set({ mt5Symbols: msg.symbols });
         } else if (type === "all_trades" || type === "history_batch") {
+          const incoming = (msg.trades || []).map(hydrateTrade);
+          // WIPE and REPLACE to ensure 1:1 match with MT5
+          incoming.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
+          set({ trades: incoming });
+        } else if (type === "recent_trades") {
           const incoming = (msg.trades || []).map(hydrateTrade);
           const { trades: existing } = get();
 
-          // Merge and remove duplicates by ID
-          const merged = [...incoming];
-          existing.forEach(t => {
-            if (!merged.find(m => m.id === t.id)) merged.push(t);
+          // Merge incoming into existing by ID
+          const updated = [...existing];
+          incoming.forEach(t => {
+            const idx = updated.findIndex(m => m.id === t.id);
+            if (idx > -1) updated[idx] = t;
+            else updated.push(t);
           });
 
-          // Sort by time descending
-          merged.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
-          set({ trades: merged });
+          updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
+          set({ trades: updated });
         } else if (type === "new_trade") {
           const { trades } = get();
           const id = msg.trade.id;
@@ -199,9 +284,14 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
 
     _ws.onclose = () => {
       _ws = null;
-      // Auto-reconnect after 5s if still connected
+      // Auto-reconnect after 3s if still connected
       if (get().isConnected) {
-        setTimeout(() => get().startWebSocket(), 5000);
+        setTimeout(async () => {
+          // Re-fetch full trade history from DB first (bridge may only push recent 24h after restart)
+          // This ensures dashboard shows all trades immediately without needing manual MT5 reconnect
+          try { await get().fetchTrades(); } catch { }
+          get().startWebSocket();
+        }, 3000);
       }
     };
   },
@@ -225,6 +315,7 @@ interface ThemeStore {
   theme: Theme;
   toggleTheme: () => void;
   setTheme: (t: Theme) => void;
+  clear: () => void;
 }
 
 export const useThemeStore = create<ThemeStore>()(
@@ -240,6 +331,10 @@ export const useThemeStore = create<ThemeStore>()(
       setTheme: (theme) => {
         set({ theme });
         apiPut("/api/settings", { theme }).catch(() => { });
+      },
+      clear: () => {
+        set({ theme: "light" });
+        localStorage.removeItem("theme-store");
       },
     }),
     { name: "theme-store" } // keep localStorage fallback for theme (fast)
@@ -261,6 +356,7 @@ interface NewsStore {
   markNotified: (id: string) => void;
   clearOldNotified: () => void;
   loadFromServer: () => Promise<void>;
+  clear: () => void;
 }
 
 export const useNewsStore = create<NewsStore>()(
@@ -281,6 +377,10 @@ export const useNewsStore = create<NewsStore>()(
           const res = await apiGet<{ newsSettings: NewsSettings }>("/api/settings");
           if (res.newsSettings) set({ settings: res.newsSettings });
         } catch { }
+      },
+      clear: () => {
+        set({ settings: { enabled: false, currencies: ["USD"], impacts: ["High"], minutesBefore: 5 } });
+        localStorage.removeItem("news-store");
       },
     }),
     { name: "news-store" }
@@ -304,12 +404,27 @@ export interface AlertToast {
   id: string; title: string; message: string; type: "bullish" | "bearish";
 }
 
+export interface AlertHistoryItem {
+  id: string;
+  triggeredAt: string;
+  data: {
+    title: string;
+    body: string;
+    symbol: string;
+    type: string;
+    alert_data: AnyAlert;
+  };
+}
+
 interface AlertStore {
   alerts: AnyAlert[];
+  history: AlertHistoryItem[];
   addAlert: (alert: Omit<CandleAlert, "id"> | Omit<PriceAlert, "id">) => Promise<void>;
   updateAlert: (id: string, partial: Partial<CandleAlert> | Partial<PriceAlert>) => Promise<void>;
   deleteAlert: (id: string) => Promise<void>;
   fetchAlerts: () => Promise<void>;
+  fetchHistory: () => Promise<void>;
+  clearHistory: () => Promise<void>;
   notifiedIds: string[];
   markNotified: (id: string) => void;
   clearOldNotified: () => void;
@@ -320,11 +435,26 @@ interface AlertStore {
 
 export const useAlertStore = create<AlertStore>()((set, get) => ({
   alerts: [],
+  history: [],
 
   fetchAlerts: async () => {
     try {
       const res = await apiGet<{ alerts: AnyAlert[] }>("/api/alerts");
       set({ alerts: res.alerts || [] });
+    } catch { }
+  },
+
+  fetchHistory: async () => {
+    try {
+      const res = await apiGet<{ history: AlertHistoryItem[] }>("/api/alerts/history");
+      set({ history: res.history || [] });
+    } catch { }
+  },
+
+  clearHistory: async () => {
+    try {
+      await apiDelete("/api/alerts/history");
+      set({ history: [] });
     } catch { }
   },
 
@@ -417,8 +547,14 @@ export const useJournalStore = create<JournalStore>()((set, get) => ({
 
 // ── Hydration helper ──────────────────────────────────────────────────────────
 function hydrateTrade(t: Trade): Trade {
-  const status = (typeof t.status === "string" ? t.status.toLowerCase() : "closed") as "closed" | "live";
-  const openTimeWIB = t.openTimeWIB || (t.openTime ? toWIB(t.openTime) : "");
+  const status = (typeof t.status === "string" ? t.status.toLowerCase() : "closed") as "closed" | "live" | "pending";
+
+  // Ensure we have a valid openTimeWIB for calendar/journal sorting
+  let openTimeWIB = t.openTimeWIB;
+  if (!openTimeWIB && t.openTime) {
+    openTimeWIB = toWIB(t.openTime);
+  }
+
   const closeTimeWIB = t.closeTimeWIB || (t.closeTime ? toWIB(t.closeTime) : "");
   let session = t.session;
   if (!session || session === "Unknown") {
@@ -429,7 +565,17 @@ function hydrateTrade(t: Trade): Trade {
     (t.openTime && t.closeTime
       ? Math.max(new Date(t.closeTime).getTime() - new Date(t.openTime).getTime(), 0)
       : 0);
-  return { ...t, status, openTimeWIB, closeTimeWIB, session, durationMs };
+  return {
+    ...t,
+    status,
+    openTimeWIB,
+    closeTimeWIB,
+    session,
+    durationMs,
+    pips: t.pips ?? 0,
+    pnl: t.pnl ?? 0,
+    lots: t.lots ?? 0
+  };
 }
 
 // ── Computed hook ─────────────────────────────────────────────────────────────

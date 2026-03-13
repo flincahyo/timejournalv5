@@ -23,8 +23,6 @@ const MENU_ITEMS = [
     { id: "analytics", href: "/dashboard/analytics", icon: "analytics", label: "Analytics", desc: "Advanced performance metrics" },
     { id: "calendar", href: "/dashboard/calendar", icon: "calendar", label: "Calendar", desc: "Daily PnL tracking and history" },
     { id: "alerts", href: "/dashboard/alerts", icon: "alerts", label: "Alerts", desc: "Price & Momentum trackers" },
-    { id: "watchlist", href: "/dashboard/watchlist", icon: "watchlist", label: "Watchlist", desc: "Track symbol movements" },
-    { id: "timemetrics", href: "/dashboard/timemetrics", icon: "time", label: "Time Metrics", desc: "Session & duration analysis" },
 ];
 
 export default function MoreMenuPage() {
@@ -43,13 +41,13 @@ export default function MoreMenuPage() {
     return (
         <div className="fade-in flex flex-col p-4 pb-24 max-w-2xl mx-auto w-full">
             {/* Header Profile Area */}
-            <div className="flex items-center gap-4 mb-8 mt-2 p-1">
-                <div className="w-[54px] h-[54px] rounded-full bg-gradient-to-tr from-[#F59E0B] to-[#EA580C] shadow-md flex items-center justify-center text-[20px] font-extrabold text-white">
+            <div className="flex items-center gap-5 mb-10 mt-4 p-2">
+                <div className="w-[64px] h-[64px] rounded-full bg-gradient-to-tr from-[#F59E0B] to-[#EA580C] shadow-lg flex items-center justify-center text-[24px] font-extrabold text-white border-2 border-surface">
                     {user?.name?.slice(0, 2).toUpperCase() || 'TR'}
                 </div>
-                <div className="flex flex-col">
-                    <span className="text-[20px] font-extrabold text-text tracking-tight leading-tight">{user?.name || "Trader"}</span>
-                    <span className="text-[14px] font-medium text-text3">{user?.email || "Guest Session"}</span>
+                <div className="flex flex-col gap-0.5">
+                    <span className="text-[22px] font-black text-text tracking-tight leading-tight">{user?.name || "Trader"}</span>
+                    <span className="text-[14px] font-bold text-text3 opacity-70">{user?.email || "Guest Session"}</span>
                 </div>
             </div>
 
@@ -157,8 +155,8 @@ export default function MoreMenuPage() {
                 </div>
             </div>
 
-            <div className="mt-8 text-center text-[11px] font-semibold text-text3 mt-auto">
-                UltraJournal Mobile App v1.0.0<br />Powered by Next.js & WebView
+            <div className="mt-12 text-center text-[10px] font-bold text-text3 opacity-40 uppercase tracking-[0.2em] mb-4">
+                UltraJournal Mobile App v1.2.0<br />Modern Trading Experience
             </div>
 
             {/* Mount Modal */}

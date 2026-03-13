@@ -164,8 +164,8 @@ export default function LoginPage() {
   useEffect(() => { if (user) router.replace("/dashboard"); }, [user]);
   if (!mounted) return null;
 
-  const applyUser = (u: { id: string; email: string; name: string; createdAt: string }) => {
-    setUser({ id: u.id, email: u.email, name: u.name, provider: "credentials", createdAt: u.createdAt });
+  const applyUser = (u: any) => {
+    setUser({ id: u.id, email: u.email, name: u.name, image: u.image, provider: "credentials", createdAt: u.createdAt });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

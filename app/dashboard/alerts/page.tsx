@@ -1,8 +1,95 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAlertStore, AnyAlert, CandleAlert, PriceAlert } from "@/store";
+import { useMT5Store } from "@/store";
 import { apiPost } from "@/lib/api";
+
+// ── Symbol Combobox ──────────────────────────────────────────────────────────
+function SymbolCombobox({
+  value, onChange, placeholder = "e.g. XAUUSD", required = false
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  const mt5Symbols = useMT5Store(s => s.mt5Symbols);
+  const trades = useMT5Store(s => s.trades);
+  const liveTrades = useMT5Store(s => s.liveTrades);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Prefer full symbol list from MT5; fall back to trade symbols if bridge hasn't pushed yet
+  const symbols = mt5Symbols.length > 0
+    ? mt5Symbols
+    : Array.from(new Set([...trades, ...liveTrades].map(t => t.symbol).filter(Boolean))).sort();
+
+  const filtered = query
+    ? symbols.filter(s => s.toUpperCase().includes(query.toUpperCase()))
+    : symbols;
+
+  // Sync external value → query display
+  useEffect(() => { setQuery(value); }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const select = (sym: string) => {
+    onChange(sym);
+    setQuery(sym);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={e => { setQuery(e.target.value.toUpperCase()); onChange(e.target.value.toUpperCase()); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 pr-8 text-[12px] font-semibold text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors uppercase"
+          required={required}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-text3 hover:text-text transition-colors"
+          tabIndex={-1}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map(sym => (
+            <button
+              key={sym}
+              type="button"
+              onMouseDown={() => select(sym)}
+              className={`w-full text-left px-3 py-2 text-[12px] font-bold transition-colors hover:bg-accent/10 hover:text-accent ${sym === value ? 'text-accent bg-accent/5' : 'text-text'
+                }`}
+            >
+              {sym}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const SOUND_PRESETS = [
   { label: "Notification Bell", url: "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" },
@@ -34,29 +121,33 @@ export default function AlertsPage() {
     if (activeTab !== "price") return;
     if (!priceSymbol) return;
 
-    let mounted = true;
+    // Clear stale price immediately when symbol changes
+    setSuggestedPrice(null);
+
+    const controller = new AbortController();
 
     const fetchPrice = async () => {
       try {
         const payload = { items: [{ symbol: priceSymbol.toUpperCase(), timeframe: "M1" }] };
-        // We use the same backend endpoint AlertWatcher uses to get the latest M1 tick
-        const json = await apiPost<any>("/api/candles", payload);
+        const json = await apiPost<any>("/api/candles", payload, { signal: controller.signal });
         if (json && json.data && json.data.length > 0) {
           const candles = json.data[0].candles;
           if (candles && candles.length > 0) {
-            // The bridge might send 1 live tick or an array of history. Always take the latest parsed close.
             const latestCandle = candles[candles.length - 1];
-            if (mounted) setSuggestedPrice(latestCandle.close);
+            setSuggestedPrice(latestCandle.close);
           }
         }
-      } catch (err) { }
+      } catch (err: any) {
+        // Ignore AbortError — it's an intentional cancel on symbol change
+        if (err?.name !== "AbortError") console.warn("[candles]", err);
+      }
     };
 
     fetchPrice();
-    const interval = setInterval(fetchPrice, 5000); // refresh closely matches the 5s tick rate
+    const interval = setInterval(fetchPrice, 2000);
 
     return () => {
-      mounted = false;
+      controller.abort();
       clearInterval(interval);
     };
   }, [priceSymbol, activeTab]);
@@ -213,14 +304,7 @@ export default function AlertsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-text3 mb-1.5 tracking-wider">Pair</label>
-                    <input
-                      type="text"
-                      value={priceSymbol}
-                      onChange={e => setPriceSymbol(e.target.value)}
-                      placeholder="e.g. XAUUSD"
-                      className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 text-[12px] font-semibold text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none uppercase transition-colors"
-                      required
-                    />
+                    <SymbolCombobox value={priceSymbol} onChange={setPriceSymbol} placeholder="e.g. XAUUSD" required />
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-text3 mb-1.5 tracking-wider">Trigger</label>
@@ -236,7 +320,7 @@ export default function AlertsPage() {
                   </div>
                 </div>
 
-                <div className="relative">
+                <div>
                   <label className="block text-[10px] uppercase font-bold text-text3 mb-1.5 tracking-wider">Target Price</label>
                   <input
                     type="number"
@@ -246,22 +330,21 @@ export default function AlertsPage() {
                     onFocus={() => setIsInputFocused(true)}
                     onBlur={() => setIsInputFocused(false)}
                     placeholder="e.g. 2650.50"
-                    className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 text-[14px] font-bold text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors pr-32"
+                    className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 text-[14px] font-bold text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors"
                     required
                   />
-                  {isInputFocused && suggestedPrice !== null && (
-                    <div className="absolute right-3 top-[30px] flex items-center">
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // Prevent focus loss on the input
-                          setTargetPrice(suggestedPrice.toString());
-                        }}
-                        className="text-[11px] font-bold text-accent bg-transparent hover:opacity-75 transition-opacity px-2"
-                      >
-                        {suggestedPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} (Current price)
-                      </button>
-                    </div>
+                  {suggestedPrice !== null && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setTargetPrice(suggestedPrice.toString());
+                      }}
+                      className="mt-1 flex items-center gap-1 text-[11px] font-bold text-accent hover:opacity-75 transition-opacity"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                      Current: {suggestedPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                    </button>
                   )}
                 </div>
 
@@ -308,13 +391,7 @@ export default function AlertsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-text3 mb-1.5 tracking-wider">Symbol</label>
-                    <input
-                      type="text"
-                      value={symbol}
-                      onChange={e => setSymbol(e.target.value)}
-                      className="w-full bg-[#F9FAFB] border border-border rounded-lg px-3 py-2 text-[12px] font-semibold text-text focus:border-accent outline-none uppercase transition-colors"
-                      required
-                    />
+                    <SymbolCombobox value={symbol} onChange={setSymbol} placeholder="e.g. XAUUSD" required />
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-text3 mb-1.5 tracking-wider">Timeframe</label>
