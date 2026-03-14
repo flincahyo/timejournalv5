@@ -268,8 +268,8 @@ function PublicCalendar({ trades }: { trades: any[] }) {
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-2">
-          {Array.from({ length: first }).map((_, i) => <div key={`e${i}`} className="min-h-[100px]" />)}
+        <div className="grid grid-cols-7 gap-1 md:gap-2">
+          {Array.from({ length: first }).map((_, i) => <div key={`e${i}`} className="min-h-[60px] md:min-h-[100px]" />)}
           {Array.from({ length: days }).map((_, i) => {
             const day = i + 1;
             const ds = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -280,19 +280,22 @@ function PublicCalendar({ trades }: { trades: any[] }) {
               <div 
                 key={day} 
                 onClick={() => setSel(isSel ? null : ds)} 
-                className={`rounded-2xl p-4 min-h-[110px] flex flex-col cursor-pointer transition-all border ${
-                  isSel ? 'border-accent bg-accent/5 ring-4 ring-accent/10 shadow-lg shadow-accent/20 scale-[1.02]' : 
+                className={`rounded-lg md:rounded-2xl p-1 md:p-4 min-h-[65px] md:min-h-[110px] flex flex-col cursor-pointer transition-all border ${
+                  isSel ? 'border-accent bg-accent/5 ring-2 md:ring-4 ring-accent/10 shadow-lg shadow-accent/20 scale-[1.02]' : 
                   `bg-surface border-border hover:border-accent/40 ${isToday ? 'border-accent/30 bg-surface2/50' : ''}`
                 }`}
               >
-                <div className={`text-[12px] font-black mb-auto ${isToday ? 'text-accent' : 'text-text3'}`}>{day}</div>
+                <div className={`text-[10px] md:text-[12px] font-black mb-auto ${isToday ? 'text-accent' : 'text-text3'}`}>{day}</div>
                 {stats && (
-                  <div className="mt-2 text-right">
-                    <div className={`text-[13px] font-black ${stats.pnl >= 0 ? 'text-green' : 'text-red'}`}>
-                      {stats.pnl >= 0 ? "+" : ""}{fmtUSD(stats.pnl)}
+                  <div className="mt-1 md:mt-2 text-right">
+                    <div className={`text-[9px] md:text-[13px] font-black whitespace-nowrap overflow-hidden ${stats.pnl >= 0 ? 'text-green' : 'text-red'}`}>
+                      {stats.pnl >= 0 ? "+" : "-"}${Math.abs(stats.pnl) >= 1000 ? (Math.abs(stats.pnl)/1000).toFixed(1) + 'k' : Math.abs(stats.pnl).toFixed(0)}
                     </div>
-                    <div className="text-[9px] font-bold text-text3 uppercase tracking-tighter opacity-60">
+                    <div className="hidden md:block text-[9px] font-bold text-text3 uppercase tracking-tighter opacity-60">
                       {stats.count} Trades • {stats.wins}W
+                    </div>
+                    <div className="md:hidden text-[7px] font-bold text-text3 uppercase opacity-60 leading-none mt-0.5">
+                      {stats.wins}W
                     </div>
                   </div>
                 )}

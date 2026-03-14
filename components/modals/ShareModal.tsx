@@ -44,16 +44,6 @@ export default function ShareModal() {
 
   return (
     <div className="flex flex-col h-full bg-surface" onClick={e => e.stopPropagation()}>
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-border bg-surface2/30 flex justify-between items-center shrink-0">
-        <div>
-          <h3 className="text-[16px] font-black text-text tracking-tight uppercase">Sharing Center</h3>
-          <p className="text-[10px] text-text3 font-bold uppercase tracking-widest mt-0.5">Public Portfolio & Calendar</p>
-        </div>
-        <button onClick={closeDrawer} className="p-2 hover:bg-surface3 rounded-xl transition-all text-text3 hover:text-text">
-          <X size={18} />
-        </button>
-      </div>
 
       <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
         {/* Create Form */}

@@ -1,13 +1,14 @@
 import React, { ReactNode } from "react";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "@/app/globals.css";
-import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { PublicInit } from "@/components/layout/PublicInit";
 
 const font = Plus_Jakarta_Sans({ subsets: ["latin"] });
 
 export default function PublicLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={`${font.className} min-h-screen bg-bg text-text selection:bg-accent/20`}>
+    <div className={`dark ${font.className} min-h-screen bg-bg text-text selection:bg-accent/20`}>
+      <PublicInit />
       <header className="sticky top-0 z-50 w-full border-b border-border bg-bg/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
