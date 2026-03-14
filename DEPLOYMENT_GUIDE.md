@@ -65,6 +65,25 @@ GRANT ALL PRIVILEGES ON DATABASE timejournal TO timejournal;
 - **Environment Variables**:
   - `NEXT_PUBLIC_API_URL`: `https://your-api-domain.com`
 
+#### Connecting via pgAdmin
+
+To manage the database using pgAdmin (or any other GUI), use the following settings:
+
+1.  **Open pgAdmin** and right-click "Servers" > "Register" > "Server...".
+2.  **General Tab**:
+    *   **Name**: `TimeJournal Production` (or any name you prefer).
+3.  **Connection Tab**:
+    *   **Host name/address**: `192.168.232.96`
+    *   **Port**: `5432`
+    *   **Maintenance database**: `timejournal`
+    *   **Username**: `timejournal`
+    *   **Password**: `timejournal`
+    *   **Save password?**: Yes (optional).
+4.  **Click Save**.
+
+> [!NOTE]
+> The server is configured to allow connections from any IP within your network. If you are connecting from outside the network, you may need to use an SSH Tunnel (SSH tab) with the root credentials provided.
+
 ### Step 2.3: Backend (FastAPI)
 - **Base Directory**: `backend`
 - **Build Command**: `pip install -r requirements.txt`

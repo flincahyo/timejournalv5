@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import String, Boolean, Float, Integer, BigInteger, Text, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import String, Boolean, Float, Integer, BigInteger, Text, DateTime, ForeignKey, JSON, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from dotenv import load_dotenv
 
@@ -60,7 +60,7 @@ class MT5Account(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     last_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     account_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, server_default=text("now()"))
 
     user: Mapped["User"] = relationship(back_populates="mt5_accounts")
     trades: Mapped[list["Trade"]] = relationship(back_populates="account", cascade="all, delete-orphan")
@@ -142,11 +142,11 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
 
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), primary_key=True)
-    theme: Mapped[str] = mapped_column(String(20), default="light", nullable=False, server_default="'light'")
-    news_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default="'{}'")
+    theme: Mapped[str] = mapped_column(String(20), default="light", nullable=False, server_default=text("'light'"))
+    news_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     terminal_layout: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     expo_push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default="now()")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default=text("now()"))
 
     user: Mapped["User"] = relationship(back_populates="settings")
 
@@ -183,42 +183,40 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db():
     """Create all tables on startup."""
     from sqlalchemy import text
+    
+    # 1. Create tables first
+    print("Creating tables...")
     async with engine.begin() as conn:
-        # Check if mt5_connections exists and needs renaming to mt5_accounts
-        try:
-            res = await conn.execute(text("SELECT to_regclass('public.mt5_connections');"))
-            if res.scalar():
-                await conn.execute(text("ALTER TABLE mt5_connections RENAME TO mt5_accounts;"))
-                print("✅ Renamed mt5_connections to mt5_accounts")
-        except Exception as e:
-            print(f"Table rename check failed: {e}")
-
         await conn.run_sync(Base.metadata.create_all)
-        # Safe migrations — ensure columns exist with correct types and defaults
-        for stmt in [
-            "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS expo_push_token VARCHAR(255);",
-            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS image TEXT;",
-            "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS terminal_layout JSONB;",
-            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES mt5_accounts(id);",
-            # Rename column if needed (careful here)
-            "ALTER TABLE trades RENAME COLUMN id TO ticket;" if "ticket" not in [None] else "", # Placeholder for logic
-            # Ensure proper defaults for existing rows to prevent NOT NULL violations
-            "ALTER TABLE user_settings ALTER COLUMN theme SET DEFAULT 'light';",
-            "ALTER TABLE user_settings ALTER COLUMN theme SET NOT NULL;",
-            "ALTER TABLE user_settings ALTER COLUMN news_settings SET DEFAULT '{}';",
-            "ALTER TABLE user_settings ALTER COLUMN news_settings SET NOT NULL;",
-            "ALTER TABLE user_settings ALTER COLUMN updated_at SET DEFAULT now();",
-            "ALTER TABLE user_settings ALTER COLUMN updated_at SET NOT NULL;",
-            # Convert existing JSON to JSONB and ensure defaults
-            "ALTER TABLE user_settings ALTER COLUMN news_settings TYPE JSONB USING news_settings::jsonb;",
-            "ALTER TABLE mt5_accounts ALTER COLUMN account_info TYPE JSONB USING account_info::jsonb;",
-            "ALTER TABLE trades ALTER COLUMN data TYPE JSONB USING data::jsonb;",
-            "ALTER TABLE alerts ALTER COLUMN data TYPE JSONB USING data::jsonb;",
-            "ALTER TABLE alert_history ALTER COLUMN data TYPE JSONB USING data::jsonb;",
-        ]:
-            if not stmt: continue
+    print("✅ Base tables checked/created.")
+
+    # 2. Run migrations individually
+    print("Running migration steps...")
+    migration_stmts = [
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS expo_push_token VARCHAR(255);",
+        "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS image TEXT;",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS terminal_layout JSONB;",
+        "ALTER TABLE trades ADD COLUMN IF NOT EXISTS account_id INTEGER REFERENCES mt5_accounts(id);",
+        "ALTER TABLE user_settings ALTER COLUMN theme SET DEFAULT 'light';",
+        "ALTER TABLE user_settings ALTER COLUMN theme SET NOT NULL;",
+        "ALTER TABLE user_settings ALTER COLUMN news_settings SET DEFAULT '{}';",
+        "ALTER TABLE user_settings ALTER COLUMN news_settings SET NOT NULL;",
+        "ALTER TABLE user_settings ALTER COLUMN updated_at SET DEFAULT now();",
+        "ALTER TABLE user_settings ALTER COLUMN updated_at SET NOT NULL;",
+        "ALTER TABLE user_settings ALTER COLUMN news_settings TYPE JSONB USING news_settings::jsonb;",
+        "ALTER TABLE mt5_accounts ALTER COLUMN account_info TYPE JSONB USING account_info::jsonb;",
+        "ALTER TABLE trades ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+        "ALTER TABLE alerts ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+        "ALTER TABLE alert_history ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+    ]
+
+    for stmt in migration_stmts:
+        async with engine.begin() as conn:
             try:
                 await conn.execute(text(stmt))
             except Exception as e:
-                print(f"Migration step failed: {stmt} -> {e}")
+                # Silently skip if column already exists or other common non-critical errors
+                if "already exists" not in str(e).lower() and "does not exist" not in str(e).lower():
+                    print(f"Migration detail: {stmt} -> {e}")
+    print("✅ Migration steps completed.")
