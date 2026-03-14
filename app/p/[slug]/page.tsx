@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
-import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { AreaChart, Area, BarChart, Bar, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { User, Calendar, Layout, TrendingUp, BarChart3, Clock, HelpCircle, AlertCircle, Globe, ChevronLeft, ChevronRight } from "lucide-react";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -76,40 +76,74 @@ export default function PublicSharePage() {
   );
 }
 
+function CTip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const v = payload[0].value as number;
+  return (
+    <div className="bg-surface border border-border rounded-xl py-2 px-3.5 shadow-xl text-xs">
+      <div className="text-text3 mb-1 font-medium">{label}</div>
+      <div className={`font-extrabold text-[14px] ${v >= 0 ? "text-green" : "text-red"}`}>
+        {v >= 0 ? "+" : ""}${Math.abs(v).toFixed(2)}
+      </div>
+    </div>
+  );
+}
+
 function PublicDashboard({ data, slug }: { data: any, slug: string }) {
-  const equityCurve = useMemo(() => {
-    if (!data?.trades) return [];
-    let run = 0;
-    return [...data.trades].reverse().map((t, i) => {
-      run += t.pnl;
-      return { d: t.openTime?.slice(5, 10) ?? `#${i}`, v: parseFloat(run.toFixed(2)) };
-    });
-  }, [data]);
+  const closed = useMemo(() => data.trades.filter((t: any) => t.status === "closed"), [data.trades]);
 
   const stats = useMemo(() => {
-    if (!data?.trades) return null;
-    const trades = data.trades;
-    const closed = trades.filter((t: any) => t.status === "closed");
     const wins = closed.filter((t: any) => t.pnl > 0);
-    const totalPips = closed.reduce((a: number, b: any) => a + (b.pips || 0), 0);
-    const totalPnl = closed.reduce((a: number, b: any) => a + (b.pnl || 0), 0);
+    const totalPips = closed.reduce((acc: number, t: any) => acc + (t.pips || 0), 0);
+    const totalPnl = closed.reduce((acc: number, t: any) => acc + (t.pnl || 0), 0);
+    const winRate = closed.length > 0 ? (wins.length / closed.length) * 100 : 0;
     
     return {
       total: closed.length,
-      winRate: closed.length ? (wins.length / closed.length) * 100 : 0,
+      winRate,
       totalPips,
-      totalPnl,
+      totalPnl
     };
-  }, [data]);
+  }, [closed]);
+
+  const equityCurve = useMemo(() => {
+    let run = 0;
+    const sorted = [...closed].sort((a, b) => new Date(a.closeTime || 0).getTime() - new Date(b.closeTime || 0).getTime());
+    return sorted.map((t, i) => {
+      run += t.pnl;
+      return { d: t.closeTime?.slice(5, 10) ?? `#${i}`, v: parseFloat(run.toFixed(2)) };
+    });
+  }, [closed]);
+
+  const hourlyData = useMemo(() => {
+    const m: Record<string, number> = {};
+    closed.forEach((t: any) => {
+      const h = t.openTime?.slice(11, 13);
+      if (!h) return;
+      m[h] = (m[h] || 0) + t.pnl;
+    });
+    return Object.entries(m)
+      .map(([hour, pnl]) => ({ hour, pnl }))
+      .sort((a, b) => b.pnl - a.pnl);
+  }, [closed]);
+
+  const maxHourlyPnl = useMemo(() => {
+    if (!hourlyData.length) return 1;
+    return Math.max(...hourlyData.map(d => Math.abs(d.pnl)), 1);
+  }, [hourlyData]);
+
+  const currentBalance = data.account?.account_info?.balance || 0;
+  const initialBalance = currentBalance - stats.totalPnl;
+  const growthPercent = initialBalance > 0 ? (stats.totalPnl / initialBalance) * 100 : 0;
 
   return (
-    <>
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
-          { label: "Win Rate", value: `${stats?.winRate.toFixed(1)}%`, icon: TrendingUp, color: "text-blue" },
-          { label: "Total PnL", value: fmtUSD(stats?.totalPnl), icon: BarChart3, color: (stats?.totalPnl || 0) >= 0 ? "text-green" : "text-red" },
-          { label: "Total Pips", value: `${(stats?.totalPips || 0).toFixed(1)} Pips`, icon: Clock, color: "text-accent" },
-          { label: "Trades", value: stats?.total, icon: Calendar, color: "text-text" },
+          { label: "Win Rate", value: `${stats.winRate.toFixed(1)}%`, icon: TrendingUp, color: "text-blue" },
+          { label: "Total PnL", value: fmtUSD(stats.totalPnl), icon: BarChart3, color: stats.totalPnl >= 0 ? "text-green" : "text-red" },
+          { label: "Growth", value: `${growthPercent >= 0 ? "+" : ""}${growthPercent.toFixed(1)}%`, icon: TrendingUp, color: growthPercent >= 0 ? "text-green" : "text-red" },
+          { label: "Trades", value: stats.total, icon: Calendar, color: "text-text" },
         ].map((k, i) => (
           <div key={i} className="bg-surface border border-border p-5 rounded-2xl shadow-sm">
             <div className="text-[10px] font-black text-text3 uppercase tracking-widest mb-3 opacity-40">{k.label}</div>
@@ -130,21 +164,14 @@ function PublicDashboard({ data, slug }: { data: any, slug: string }) {
                 <AreaChart data={equityCurve} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="pubG" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={.2} />
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
                       <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--border)" opacity={0.5} />
                   <XAxis dataKey="d" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} dy={8} />
                   <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} dx={-4} tickFormatter={v => `$${v}`} />
-                  <Tooltip content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    return (
-                      <div className="bg-bg/95 backdrop-blur-md border border-border p-3 rounded-xl shadow-xl">
-                        <div className="text-[14px] font-black text-text">${payload[0].value}</div>
-                      </div>
-                    );
-                  }} />
+                  <Tooltip content={<CTip />} />
                   <Area type="monotone" dataKey="v" stroke="#2563eb" strokeWidth={3} fill="url(#pubG)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -193,27 +220,37 @@ function PublicDashboard({ data, slug }: { data: any, slug: string }) {
 
         <div className="space-y-6">
            <div className="bg-surface border border-border rounded-2xl p-6">
-              <h4 className="text-[11px] font-black text-text3 uppercase tracking-widest mb-4">Sharing Metadata</h4>
-              <div className="space-y-4">
-                 <div>
-                    <div className="text-[10px] text-text3 uppercase font-bold opacity-40 mb-1">Link Slug</div>
-                    <div className="text-[13px] font-bold">/p/{slug}</div>
-                 </div>
-                 <div>
-                    <div className="text-[10px] text-text3 uppercase font-bold opacity-40 mb-1">Sync Version</div>
-                    <div className="text-[13px] font-bold">MT5 Bridge v2.0</div>
-                 </div>
-                 <div>
-                    <div className="text-[10px] text-text3 uppercase font-bold opacity-40 mb-1">Data Freshness</div>
-                    <div className="text-[13px] font-bold">Live Synced</div>
-                 </div>
+              <h4 className="text-[12px] font-black text-text uppercase tracking-widest mb-6">Hourly Distribution</h4>
+              <div className="space-y-5 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
+                 {hourlyData.map((d) => {
+                    const w = (Math.abs(d.pnl) / maxHourlyPnl) * 100;
+                    const isPos = d.pnl >= 0;
+                    return (
+                       <div key={d.hour} className="space-y-1.5">
+                          <div className="flex justify-between items-center text-[11px] font-bold uppercase tracking-tight">
+                             <span className="text-text">{d.hour}:00</span>
+                             <span className={isPos ? "text-green" : "text-red"}>
+                                {isPos ? "+" : ""}{fmtUSD(d.pnl)}
+                             </span>
+                          </div>
+                          <div className="h-1 bg-surface2 rounded-full overflow-hidden">
+                             <div 
+                                className={`h-full rounded-full transition-all duration-1000 ${isPos ? "bg-green" : "bg-red"}`}
+                                style={{ width: `${w}%` }}
+                             />
+                          </div>
+                       </div>
+                    );
+                 })}
+                 {hourlyData.length === 0 && (
+                    <div className="py-4 text-center opacity-40 text-[11px] font-bold uppercase">No data</div>
+                 )}
               </div>
            </div>
-           
            <CTA />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

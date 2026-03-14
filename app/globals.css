@@ -79,7 +79,7 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
-  html.dark {
+  html.dark, .dark {
     --bg: #0f1117;
     --bg-grad: var(--bg);
     --surface: #181b22;
@@ -172,8 +172,8 @@
   }
 
   /* Native browser form elements — force dark theme */
-  html.dark input,
-  html.dark textarea,
+  html.dark input, .dark input,
+  html.dark textarea, .dark textarea,
   html.dark select {
     background-color: var(--surface2);
     color: var(--text);
@@ -446,7 +446,7 @@
     color: var(--pill-t);
   }
 
-  html.dark .nav-item.nav-active {
+  html.dark .nav-item.nav-active, .dark .nav-item.nav-active {
     background: var(--surface3);
     color: var(--text);
     box-shadow: none;

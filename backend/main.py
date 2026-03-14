@@ -120,6 +120,41 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
         print(f"DEBUG PUSH: Error sending push notification: {e}")
 
 
+def detect_session(dt_val):
+    """Detects Forex trading session based on timestamp."""
+    if not dt_val:
+        return "Unknown"
+    try:
+        # Handle WIB string: "2024-05-15 19:30:00"
+        if isinstance(dt_val, str) and len(dt_val) >= 19 and " " in dt_val:
+            dt_naive = datetime.datetime.strptime(dt_val[:19], "%Y-%m-%d %H:%M:%S")
+            dt_utc = pytz.timezone("Asia/Jakarta").localize(dt_naive).astimezone(pytz.UTC)
+        elif isinstance(dt_val, (int, float)):
+            dt_utc = datetime.datetime.fromtimestamp(dt_val, tz=pytz.UTC)
+        else:
+            dt_utc = datetime.datetime.fromisoformat(dt_val.replace("Z", "+00:00")).astimezone(pytz.UTC)
+            
+        london_tz = pytz.timezone("Europe/London")
+        ny_tz = pytz.timezone("America/New_York")
+        
+        dt_london = dt_utc.astimezone(london_tz)
+        dt_ny = dt_utc.astimezone(ny_tz)
+        
+        l_h = dt_london.hour
+        ny_h = dt_ny.hour
+        
+        l_open = 8 <= l_h < 17
+        ny_open = 8 <= ny_h < 17
+        
+        if l_open and ny_open: return "Overlap (LDN+NY)"
+        if l_open: return "London"
+        if ny_open: return "New York"
+        if 0 <= dt_utc.hour < 9: return "Tokyo"
+        return "Sydney"
+    except:
+        return "Unknown"
+
+
 # ── MT5 worker callback ───────────────────────────────────────────────────────
 async def on_mt5_message(user_id: str, msg: dict):
     """Called by MT5WorkerProcess when data arrives. Saves to DB and broadcasts."""
@@ -152,6 +187,10 @@ async def on_mt5_message(user_id: str, msg: dict):
                 print(f"DEBUG MT5: Persisting {len(trades)} trades for account {aid} (user {uid})")
                 for t in trades:
                     ticket = str(t["id"])
+                    # Inject session if missing
+                    if "session" not in t:
+                        t["session"] = detect_session(t.get("openTime") or t.get("time"))
+                    
                     # Check if trade exists for THIS specific account
                     res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
                     existing = res_t.scalar_one_or_none()
@@ -176,6 +215,8 @@ async def on_mt5_message(user_id: str, msg: dict):
                 res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
                 existing = res_t.scalar_one_or_none()
                 if not existing:
+                    if "session" not in t:
+                        t["session"] = detect_session(t.get("openTime") or t.get("time"))
                     db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
                     await db.commit()
                     
@@ -749,10 +790,27 @@ async def get_public_share(slug: str, db: AsyncSession = Depends(get_db)):
         trades_query = trades_query.where(Trade.user_id == share.user_id)
     
     res_trades = await db.execute(trades_query)
-    trades = [t.data for t in res_trades.scalars().all()]
+    trades_raw = res_trades.scalars().all()
+    trades = []
+    for t in trades_raw:
+        d = t.data
+        if "session" not in d:
+            d["session"] = detect_session(d.get("openTime") or d.get("time"))
+        trades.append(d)
     
     # Filter trades if settings are provided (e.g. only show last 30 days)
     # [TBD: Implement specialized filtering based on share.settings]
+
+    # Fetch account info if a specific account is linked
+    account_data = None
+    if share.account_id:
+        acc = await db.get(MT5Account, share.account_id)
+        if acc:
+            account_data = {
+                "login": acc.login,
+                "server": acc.server,
+                "account_info": acc.account_info
+            }
 
     return {
         "slug": slug,
@@ -760,6 +818,7 @@ async def get_public_share(slug: str, db: AsyncSession = Depends(get_db)):
         "owner": res_user.name,
         "owner_image": res_user.image,
         "trades": sorted(trades, key=lambda x: x.get("openTime", ""), reverse=True),
+        "account": account_data,
         "settings": share.settings
     }
 
