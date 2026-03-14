@@ -37,18 +37,25 @@ logging.basicConfig(
 log = logging.getLogger("mt5_bridge")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-_raw_host = os.getenv("MT5_BRIDGE_HOST", "http://localhost").strip().rstrip("/")
-BACKEND_HOST = _raw_host if _raw_host.startswith("http") else f"http://{_raw_host}"
-BACKEND_PORT = os.getenv("MT5_BRIDGE_PORT", "").strip()
+def _get_env(key: str, default: str = "") -> str:
+    val = os.getenv(key, default).strip().strip('"').strip("'")
+    return val
 
-# Robust URL Construction: Avoid duplicate ports or trailing colons
-if BACKEND_PORT and ":" not in _raw_host.replace("://", ""):
-    BACKEND_URL = f"{BACKEND_HOST}:{BACKEND_PORT}"
-else:
-    BACKEND_URL = BACKEND_HOST
+# Prioritize BACKEND_URL if present, otherwise fallback to HOST/PORT construction
+BACKEND_URL = _get_env("BACKEND_URL")
 
-BRIDGE_API_KEY = os.getenv("MT5_BRIDGE_API_KEY", "changeme_secret_key_123").strip()
-POLL_INTERVAL = int(os.getenv("MT5_POLL_INTERVAL", "10"))  # seconds
+if not BACKEND_URL:
+    _raw_host = _get_env("MT5_BRIDGE_HOST", "http://localhost").rstrip("/")
+    BACKEND_HOST = _raw_host if _raw_host.startswith("http") else f"http://{_raw_host}"
+    BACKEND_PORT = _get_env("MT5_BRIDGE_PORT", "")
+    
+    if BACKEND_PORT and ":" not in _raw_host.replace("://", ""):
+        BACKEND_URL = f"{BACKEND_HOST}:{BACKEND_PORT}"
+    else:
+        BACKEND_URL = BACKEND_HOST
+
+BRIDGE_API_KEY = _get_env("MT5_BRIDGE_API_KEY", "changeme_secret_key_123")
+POLL_INTERVAL = int(_get_env("MT5_POLL_INTERVAL", "10"))  # seconds
 
 HEADERS = {"x-bridge-key": BRIDGE_API_KEY, "Content-Type": "application/json"}
 
