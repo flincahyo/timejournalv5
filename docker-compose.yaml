@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-timejournal}:${POSTGRES_PASSWORD:-timejournal}@timejournal-db:5432/${POSTGRES_DB:-timejournal}
+      DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE_ME_USE_RANDOM_32_CHARS}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       XAI_API_KEY: ${XAI_API_KEY:-}
