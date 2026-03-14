@@ -3,7 +3,7 @@
  * Central fetch wrapper — auto-attaches JWT token from localStorage.
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "uj_token";
 
 export function getToken(): string | null {

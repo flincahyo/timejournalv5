@@ -63,7 +63,7 @@ GRANT ALL PRIVILEGES ON DATABASE timejournal TO timejournal;
 - **Build Command**: `npm run build`
 - **Start Command**: `npm run start`
 - **Environment Variables**:
-  - `NEXT_PUBLIC_API_URL`: `https://your-api-domain.com`
+   - `NEXT_PUBLIC_BACKEND_URL`: `https://your-api-domain.com` (Must include `https://`)
 
 #### Connecting via pgAdmin
 
@@ -92,6 +92,7 @@ To manage the database using pgAdmin (or any other GUI), use the following setti
   - `DATABASE_URL`: `postgresql+asyncpg://timejournal:YOUR_PASSWORD@DB_SERVER_IP:5432/timejournal`
   - `JWT_SECRET_KEY`: `your_random_secret`
   - `MT5_BRIDGE_API_KEY`: `your_bridge_secret`
+  - `ALLOWED_ORIGINS`: `https://your-frontend-domain.com` (Or `*` for testing, though not recommended for production)
 
 ---
 
