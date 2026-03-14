@@ -695,6 +695,21 @@ class ShareRequest(BaseModel):
     type: str  # 'dashboard' | 'calendar'
     settings: dict = {}
 
+@app.get("/api/share/list")
+async def list_shares(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(PublicShare).where(PublicShare.user_id == user.id))
+    shares = res.scalars().all()
+    return {"shares": shares}
+
+@app.delete("/api/share/{id}")
+async def delete_share(id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    share = await db.get(PublicShare, id)
+    if not share or share.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Share not found")
+    await db.delete(share)
+    await db.commit()
+    return {"ok": True}
+
 @app.post("/api/share")
 async def create_share(req: ShareRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Check if slug exists
@@ -743,6 +758,7 @@ async def get_public_share(slug: str, db: AsyncSession = Depends(get_db)):
         "slug": slug,
         "type": share.type,
         "owner": res_user.name,
+        "owner_image": res_user.image,
         "trades": sorted(trades, key=lambda x: x.get("openTime", ""), reverse=True),
         "settings": share.settings
     }

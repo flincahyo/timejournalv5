@@ -59,6 +59,7 @@ interface MT5Store {
   liveTrades: Trade[];
   mt5Symbols: string[];       
   isLoading: boolean;
+  activeAccountId: number | null;
   accounts: any[]; // MT5AccountSession[]
 
   setConnected: (v: boolean) => void;
@@ -100,6 +101,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
   liveTrades: [],
   mt5Symbols: [],
   isLoading: false,
+  activeAccountId: null,
   accounts: [],
 
   setConnected: (isConnected) => set({ isConnected }),
@@ -182,6 +184,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
       set({
         isConnected: status.connected,
         account: status.account,
+        activeAccountId: (status as any).accountId, // database ID
         lastSync: status.lastSync,
         connectionParams: status.login ? { login: status.login, server: status.server || "" } : null,
       });
@@ -543,6 +546,53 @@ export const useJournalStore = create<JournalStore>()((set, get) => ({
     set((s) => ({ tags: s.tags.filter((t) => t !== tag) }));
     apiDelete("/api/journal/tag", { name: tag }).catch(() => { });
   },
+}));
+
+// ── Share Store ────────────────────────────────────────────────────────────────
+export interface PublicShare {
+  id: string;
+  slug: string;
+  type: "dashboard" | "calendar";
+  settings: any;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface ShareStore {
+  shares: PublicShare[];
+  isLoading: boolean;
+  fetchShares: () => Promise<void>;
+  createShare: (data: { slug: string; type: string; account_id?: number; settings?: any }) => Promise<{ ok: boolean; message?: string }>;
+  deleteShare: (id: string) => Promise<void>;
+}
+
+export const useShareStore = create<ShareStore>()((set, get) => ({
+  shares: [],
+  isLoading: false,
+  fetchShares: async () => {
+    try {
+      const res = await apiGet<{ shares: PublicShare[] }>("/api/share/list");
+      set({ shares: res.shares || [] });
+    } catch { }
+  },
+  createShare: async (data) => {
+    set({ isLoading: true });
+    try {
+      const res = await apiPost<any>("/api/share", data);
+      await get().fetchShares();
+      set({ isLoading: false });
+      return { ok: true };
+    } catch (e: any) {
+      set({ isLoading: false });
+      return { ok: false, message: e.message };
+    }
+  },
+  deleteShare: async (id) => {
+    try {
+      await apiDelete(`/api/share/${id}`);
+      set((s) => ({ shares: s.shares.filter((x) => x.id !== id) }));
+    } catch { }
+  }
 }));
 
 // ── Hydration helper ──────────────────────────────────────────────────────────

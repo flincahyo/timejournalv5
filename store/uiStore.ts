@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type DrawerType = "ai_analyst" | "add_trade" | "mt5_connect" | "filter" | "date_range" | "account" | null;
+type DrawerType = "ai_analyst" | "add_trade" | "mt5_connect" | "filter" | "date_range" | "account" | "share" | null;
 
 interface UIStore {
     activeDrawer: DrawerType;

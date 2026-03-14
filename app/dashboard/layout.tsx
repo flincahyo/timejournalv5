@@ -12,6 +12,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 import MobileTabBar from "@/components/layout/MobileTabBar";
 import AccountModal from "@/components/modals/AccountModal";
+import ShareModal from "@/components/modals/ShareModal";
 import { useMT5Sync } from "@/hooks/useMT5Sync";
 import { authGetMe } from "@/lib/auth";
 import { getToken } from "@/lib/api";
@@ -157,6 +158,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         subtitle="Objective performance insights"
       >
         <AIAnalystContent stats={stats} closedTrades={all.filter(t => t.status === 'closed')} onClose={closeDrawer} />
+      </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'share'}
+        onClose={closeDrawer}
+        title="Share Portfolio"
+        subtitle="Manage public sharing links"
+        noPadding
+      >
+        <ShareModal />
       </SideDrawer>
     </DataLoader>
   );

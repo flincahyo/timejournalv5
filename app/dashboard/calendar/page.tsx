@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useMemo, useState } from "react";
 import { useFilteredTrades } from "@/store";
 import { fmtUSD } from "@/lib/utils";
@@ -198,7 +198,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Data Panes Container (Cross-fade) */}
-      <div className="relative w-full mt-2 min-h-[435px]">
+      <div className="relative w-full mt-2 min-h-[520px] pb-10">
 
         {/* Weekly Info Pane */}
         <div
