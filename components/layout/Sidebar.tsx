@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useTerminalStore, useThemeStore, useNewsStore, useMT5Store } from "@/store";
+import { useTerminalStore, useThemeStore, useNewsStore, useMT5Store, useUIStore } from "@/store";
 import {
   BarChart2,
   Calendar,
@@ -28,6 +28,7 @@ export default function Sidebar() {
   const { clear: clearTheme } = useThemeStore();
   const { clear: clearNews } = useNewsStore();
   const { disconnectMT5 } = useMT5Store();
+  const { openDrawer } = useUIStore();
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     overview: true,
@@ -97,6 +98,11 @@ export default function Sidebar() {
                   icon={Activity}
                   label="Reset Layout"
                   onClick={resetLayout}
+                />
+                <MenuItem
+                  icon={Settings}
+                  label="Recap Settings"
+                  onClick={() => openDrawer('recap_settings')}
                 />
               </div>
             )}

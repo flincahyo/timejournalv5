@@ -19,12 +19,14 @@ import {
     X
 } from 'lucide-react';
 import { toWIB } from '@/lib/utils';
+import AddAlertModal from '../modals/AddAlertModal';
 
 export default function AlertWidget() {
     const { alerts, history, fetchAlerts, fetchHistory, deleteAlert, clearHistory } = useAlertStore();
     const { isConnected } = useMT5Store();
     const [activeTab, setActiveTab] = useState<'active' | 'history' | 'system'>('active');
     const [searchQuery, setSearchQuery] = useState('');
+    const [showAddModal, setShowAddModal] = useState(false);
 
     useEffect(() => {
         fetchAlerts();
@@ -48,9 +50,9 @@ export default function AlertWidget() {
     );
 
     return (
-        <div className="flex flex-col h-full bg-surface/20 backdrop-blur-sm overflow-hidden border-0">
+        <div className="flex flex-col h-full bg-surface2/20 backdrop-blur-md overflow-hidden border-0">
             {/* Custom Header within Widget */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 bg-surface/30">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-surface/40">
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                     <TabButton
                         active={activeTab === 'active'}
@@ -75,16 +77,20 @@ export default function AlertWidget() {
                 </div>
 
                 <div className="flex items-center gap-1 ml-2">
-                    <button className="p-1.5 rounded-md hover:bg-surface/50 text-text3 transition-all">
-                        <Plus size={14} />
+                    <button 
+                        onClick={() => setShowAddModal(true)}
+                        className="p-1.5 rounded-lg bg-accent/10 text-accent hover:bg-accent hover:text-surface transition-all duration-200"
+                        title="Add New Alert"
+                    >
+                        <Plus size={15} strokeWidth={2.5} />
                     </button>
-                    <button className="p-1.5 rounded-md hover:bg-surface/50 text-text3 transition-all">
+                    <button className="p-1.5 rounded-lg hover:bg-surface3 text-text3 transition-all">
                         <Search size={14} />
                     </button>
                     {activeTab === 'history' && history.length > 0 && (
                         <button
                             onClick={() => { if (confirm("Clear history?")) clearHistory(); }}
-                            className="p-1.5 rounded-md hover:bg-red/10 text-text3 hover:text-red transition-all"
+                            className="p-1.5 rounded-lg hover:bg-red/10 text-text3 hover:text-red transition-all"
                         >
                             <Trash2 size={14} />
                         </button>
@@ -128,17 +134,19 @@ export default function AlertWidget() {
             </div>
 
             {/* Footer / Status */}
-            <div className="px-3 py-1.5 border-t border-border/30 bg-surface/10 flex items-center justify-between">
+            <div className="px-4 py-2 border-t border-border/30 bg-surface/30 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green animate-pulse' : 'bg-red'}`} />
-                    <span className="text-[9px] text-text3 uppercase tracking-tighter">
-                        {isConnected ? 'Bridge Active' : 'Bridge Offline'}
+                    <span className="text-[10px] text-text3 font-bold uppercase tracking-wider">
+                        {isConnected ? 'Signal Live' : 'Offline'}
                     </span>
                 </div>
                 <div className="flex items-center gap-2 opacity-60">
-                    <Settings2 size={11} className="text-text3 cursor-pointer hover:text-text transition-colors" />
+                    <Settings2 size={12} className="text-text3 cursor-pointer hover:text-text transition-colors" />
                 </div>
             </div>
+
+            {showAddModal && <AddAlertModal onClose={() => setShowAddModal(false)} />}
         </div>
     );
 }
@@ -147,15 +155,15 @@ function TabButton({ active, onClick, icon, label, count }: any) {
     return (
         <button
             onClick={onClick}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all shrink-0 ${active
-                ? 'bg-blue/10 text-blue shadow-sm'
-                : 'text-text3 hover:bg-surface/50 hover:text-text'
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold transition-all shrink-0 ${active
+                ? 'bg-accent/10 text-accent ring-1 ring-accent/20 shadow-sm'
+                : 'text-text3 hover:bg-surface3/50 hover:text-text'
                 }`}
         >
             {icon}
-            <span className="hidden sm:inline">{label}</span>
+            <span className="hidden sm:inline lowercase first-letter:uppercase">{label}</span>
             {count !== undefined && (
-                <span className={`px-1 rounded-full text-[9px] ${active ? 'bg-blue/20' : 'bg-surface/80'}`}>
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${active ? 'bg-accent/20 text-accent' : 'bg-surface3 text-text3'}`}>
                     {count}
                 </span>
             )}
@@ -165,29 +173,29 @@ function TabButton({ active, onClick, icon, label, count }: any) {
 
 function AlertItem({ alert, onDelete }: any) {
     return (
-        <div className="group relative flex items-center justify-between p-2 rounded-lg hover:bg-surface/40 border border-transparent hover:border-border/40 transition-all">
+        <div className="group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface bg-surface/30 border border-border/30 hover:border-accent/30 transition-all duration-200">
             <div className="flex items-center gap-3 min-w-0">
-                <div className={`p-2 rounded-full bg-surface/60 ${alert.enabled ? 'text-blue' : 'text-text3 opacity-40'}`}>
-                    {alert.type === 'price' ? <Zap size={14} /> : <Activity size={14} />}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-opacity ${alert.enabled ? 'bg-accent/5 text-accent' : 'bg-surface3 text-text3 opacity-40'}`}>
+                    {alert.type === 'price' ? <Zap size={15} /> : <Activity size={15} />}
                 </div>
                 <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-2">
-                        <span className="font-bold text-[12px] text-text truncate uppercase">{alert.symbol}</span>
+                        <span className="font-bold text-[12.5px] text-text truncate uppercase tracking-tight">{alert.symbol}</span>
                         {alert.type === 'price' && (
-                            <span className={`text-[10px] px-1 rounded ${alert.trigger === 'Above' ? 'text-green bg-green/10' : 'text-red bg-red/10'}`}>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${alert.trigger === 'Above' ? 'text-green bg-green/10 ring-1 ring-green/20' : 'text-red bg-red/10 ring-1 ring-red/20'}`}>
                                 {alert.trigger}
                             </span>
                         )}
                     </div>
-                    <span className="text-[10px] text-text3 truncate">
-                        {alert.type === 'price' ? `Target: ${alert.targetPrice}` : `${alert.timeframe} Momentum`}
+                    <span className="text-[10px] font-medium text-text3 truncate opacity-80">
+                        {alert.type === 'price' ? `Target Price: ${alert.targetPrice}` : `${alert.timeframe} Momentum Trend`}
                     </span>
                 </div>
             </div>
 
             <button
                 onClick={onDelete}
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-red/10 text-text3 hover:text-red transition-all"
+                className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red/10 text-text3 hover:text-red transition-all duration-200"
             >
                 <Trash2 size={14} />
             </button>
@@ -200,18 +208,23 @@ function HistoryItem({ item }: { item: any }) {
     const isBullish = item.data.body?.toLowerCase().includes('bullish') || item.data.body?.includes('above');
 
     return (
-        <div className="flex items-center justify-between p-2 rounded-lg hover:bg-surface/30 transition-all border-l-2 border-transparent hover:border-blue/40">
+        <div className="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface/60 transition-all duration-200 border border-transparent hover:border-border/40 group">
             <div className="flex items-center gap-3 min-w-0">
-                <div className={`p-1.5 rounded-md ${isBullish ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
-                    {isBullish ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBullish ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
+                    {isBullish ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="font-semibold text-[11px] text-text truncate uppercase">{item.data.symbol}</span>
-                    <span className="text-[10px] text-text3 truncate opacity-80">{item.data.body}</span>
+                    <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-[11.5px] text-text truncate uppercase">{item.data.symbol}</span>
+                        <span className="text-[9px] font-bold text-text3 opacity-40 tabular-nums">
+                            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                    </div>
+                    <span className="text-[10px] font-medium text-text3 truncate opacity-70 leading-tight">{item.data.body}</span>
                 </div>
             </div>
-            <div className="text-[9px] text-text3 shrink-0 opacity-60 tabular-nums font-medium">
-                {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            <div className="shrink-0 transition-transform group-hover:translate-x-0.5">
+                <Activity size={12} className="text-text3 opacity-20" />
             </div>
         </div>
     );

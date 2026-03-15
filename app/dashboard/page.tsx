@@ -254,11 +254,6 @@ export default function DashboardPage() {
                 <span className="text-xs font-bold text-green">{live.length} Live</span>
               </button>
             )}
-            {isConnected && account && (
-              <div className="text-xs text-text3 font-medium bg-surface border border-border rounded-full py-2 px-3.5">
-                #{account.login} ${account.balance?.toFixed(0)}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -398,11 +393,11 @@ export default function DashboardPage() {
             </div>
             <div className="text-right">
               <div className="flex gap-4">
-                <div className="flex items-center gap-1.25">
+                <div className="flex items-center gap-1">
                   <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-green ring-1 ring-green/20" />
                   <span className="text-[11px] text-text2">Profit: ${stats.grossProfit.toFixed(0)}</span>
                 </div>
-                <div className="flex items-center gap-1.25">
+                <div className="flex items-center gap-1">
                   <div className="w-2 h-2 rounded-full border-[1.5px] border-surface bg-red ring-1 ring-red/20" />
                   <span className="text-[11px] text-text2">Loss: ${stats.grossLoss.toFixed(0)}</span>
                 </div>

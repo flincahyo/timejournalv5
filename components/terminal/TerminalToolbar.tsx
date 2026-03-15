@@ -11,6 +11,7 @@ const WIDGET_OPTIONS: { type: WidgetType; label: string; description: string }[]
     { type: "news_economic", label: "Economic Calendar", description: "TradingView economic calendar" },
     { type: "news_timeline", label: "News Timeline", description: "TradingView real-time news feed" },
     { type: "live_trades", label: "Live Positions", description: "Monitor your active MT5 trades" },
+    { type: "trading_ritual", label: "The Pilot's Ritual", description: "Pre-flight professional trader checklist" },
     { type: "price_alerts", label: "Price Alerts", description: "Track your active and triggered alerts" },
 ];
 

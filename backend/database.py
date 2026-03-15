@@ -145,6 +145,7 @@ class UserSettings(Base):
     theme: Mapped[str] = mapped_column(String(20), default="light", nullable=False, server_default=text("'light'"))
     news_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     terminal_layout: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    recap_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     expo_push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default=text("now()"))
 
@@ -207,6 +208,7 @@ async def init_db():
         "ALTER TABLE user_settings ALTER COLUMN news_settings TYPE JSONB USING news_settings::jsonb;",
         "ALTER TABLE mt5_accounts ALTER COLUMN account_info TYPE JSONB USING account_info::jsonb;",
         "ALTER TABLE trades ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS recap_settings JSONB NOT NULL DEFAULT '{}';",
         "ALTER TABLE alerts ALTER COLUMN data TYPE JSONB USING data::jsonb;",
         "ALTER TABLE alert_history ALTER COLUMN data TYPE JSONB USING data::jsonb;",
     ]

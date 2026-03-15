@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 export { useTerminalStore } from "./terminalStore";
 export { useUIStore } from "./uiStore";
-import { Trade, TradeFilter, MT5Account, User, Theme, DEFAULT_FILTER } from "@/types";
+export { useRecapStore } from "./recapStore";
+import { Trade, TradeFilter, MT5Account, User, Theme, DEFAULT_FILTER, RecapSettings } from "@/types";
 import { calcStats, applyFilter, toWIB, detectSession } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete, buildWsUrl, getToken } from "@/lib/api";
 
@@ -61,6 +62,7 @@ interface MT5Store {
   isLoading: boolean;
   activeAccountId: number | null;
   accounts: any[]; // MT5AccountSession[]
+  recapQueue: Trade[];
 
   setConnected: (v: boolean) => void;
   setAccount: (a: MT5Account | null) => void;
@@ -73,6 +75,8 @@ interface MT5Store {
   deleteTrade: (id: string) => void;
   reset: () => void;
   setLoading: (v: boolean) => void;
+  addToRecapQueue: (t: Trade) => void;
+  removeFromRecapQueue: (id: string) => void;
 
   /** Connect to MT5 via API and start WebSocket */
   connectMT5: (login: number, password: string, server: string) => Promise<{ success: boolean; message?: string }>;
@@ -103,6 +107,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
   isLoading: false,
   activeAccountId: null,
   accounts: [],
+  recapQueue: [],
 
   setConnected: (isConnected) => set({ isConnected }),
   setAccount: (account) => set({ account }),
@@ -131,7 +136,10 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
     set((s) => ({ trades: s.trades.filter((t) => t.id !== id) })),
 
   reset: () =>
-    set({ isConnected: false, account: null, connectionParams: null, trades: [], liveTrades: [] }),
+    set({ isConnected: false, account: null, connectionParams: null, trades: [], liveTrades: [], recapQueue: [] }),
+
+  addToRecapQueue: (trade) => set((s) => ({ recapQueue: [...s.recapQueue, trade] })),
+  removeFromRecapQueue: (id) => set((s) => ({ recapQueue: s.recapQueue.filter(t => t.id !== id) })),
 
   connectMT5: async (login, password, server) => {
     set({ isLoading: true });
@@ -273,11 +281,25 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
 
           updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
           set({ trades: updated });
-        } else if (type === "new_trade") {
-          const { trades } = get();
+          } else if (type === "new_trade") {
+          const { trades, isConnected } = get();
           const id = msg.trade.id;
+          const hydrated = hydrateTrade(msg.trade);
+          
           if (!trades.find((t) => t.id === id)) {
-            set({ trades: [hydrateTrade(msg.trade), ...trades] });
+            set({ trades: [hydrated, ...trades] });
+            
+            // IF trade is CLOSED and we are already connected (not initial load), push to recap queue
+            if (hydrated.status === 'closed' && isConnected) {
+              // Check if recap is enabled in settings
+              try {
+                // Dynamically import/access store to avoid circular or early access issues if any
+                // But since they are in the same file or exported, it's fine.
+                // We'll use get() from useRecapStore inside the component or here.
+                // For now just push it, the Modal will decide whether to show based on enabled flag.
+                set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+              } catch (e) {}
+            }
           }
         } else if (type === "connected") {
           set({ isConnected: true, account: msg.account });

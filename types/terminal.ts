@@ -6,7 +6,7 @@ export type WidgetType =
     | "news_timeline"
     | "live_trades"
     | "account_summary"
-    | "trading_checklist"
+    | "trading_ritual"
     | "price_alerts"
     | "custom_html";
 

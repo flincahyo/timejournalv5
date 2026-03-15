@@ -77,6 +77,15 @@ export async function apiDelete<T>(path: string, body?: unknown): Promise<T> {
     return handleResponse<T>(res);
 }
 
+export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${BACKEND_URL}${path}`, {
+        method: "PATCH",
+        headers: buildHeaders(),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    return handleResponse<T>(res);
+}
+
 /** Build WebSocket URL with JWT token as query param */
 export function buildWsUrl(path: string): string {
     const token = getToken();

@@ -14,6 +14,7 @@ import LiveTerminalTrades from "@/components/terminal/LiveTerminalTrades";
 import AccountSummaryWidget from "@/components/terminal/AccountSummaryWidget";
 import CustomHtmlWidget from "@/components/terminal/CustomHtmlWidget";
 import AlertWidget from "@/components/terminal/AlertWidget";
+import RitualWidget from "@/components/terminal/RitualWidget";
 
 // Import styles for react-grid-layout
 import "react-grid-layout/css/styles.css";
@@ -164,6 +165,7 @@ export default function TerminalGrid() {
             case "live_trades": return <LiveTerminalTrades hideHeader={true} />;
             case "account_summary": return <AccountSummaryWidget />;
             case "price_alerts": return <AlertWidget />;
+            case "trading_ritual": return <RitualWidget />;
             case "custom_html": return <CustomHtmlWidget content={content || ""} />;
             default: return <div className="p-4 text-xs text-text3">Unknown Widget: {type}</div>;
         }

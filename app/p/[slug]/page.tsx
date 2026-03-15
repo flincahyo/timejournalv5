@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
 import { AreaChart, Area, BarChart, Bar, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { User, Calendar, Layout, TrendingUp, BarChart3, Clock, HelpCircle, AlertCircle, Globe, ChevronLeft, ChevronRight } from "lucide-react";
+import { AvatarIcon } from "@/components/ui/AvatarIcon";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -50,12 +51,8 @@ export default function PublicSharePage() {
     <div className="max-w-7xl mx-auto px-4 py-8 pb-32 animate-in fade-in duration-700">
       {/* Bio Header */}
       <div className="flex flex-col md:flex-row items-center md:items-start gap-6 mb-12">
-        <div className="w-24 h-24 rounded-3xl bg-surface2 relative overflow-hidden flex items-center justify-center text-accent/40 shadow-xl">
-           {data.owner_image ? (
-             <img src={data.owner_image} className="w-full h-full object-cover" alt={data.owner} />
-           ) : (
-             <User size={48} />
-           )}
+        <div className="w-24 h-24 relative group">
+          <AvatarIcon id={data.owner_image} className="w-full h-full" isLarge />
         </div>
         <div className="text-center md:text-left pt-2">
           <h1 className="text-[32px] font-black text-text tracking-tight mb-1">{data.owner}'s Portfolio</h1>
@@ -405,7 +402,7 @@ function CTA() {
        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl" />
        <div className="relative z-10 max-w-lg">
           <h3 className="text-[28px] font-black leading-tight mb-4 tracking-tighter">Level Up Your Trading Journal</h3>
-          <p className="text-[14px] opacity-80 leading-relaxed mb-8 font-medium">Capture insights, track every pips, and analyze your edge with AI. Join thousands of traders on TimeJournal today.</p>
+          <p className="text-[14px] opacity-80 leading-relaxed mb-8 font-medium">Capture insights, track every pips, and analyze your edge with AI. Join thousands of traders on time journal. today.</p>
           <button onClick={() => window.open('https://timejournal.site', '_blank')} className="px-8 py-4 bg-white text-accent rounded-2xl font-black text-[13px] uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all">
             Get Started Free
           </button>

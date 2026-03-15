@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore, useMT5Store, useJournalStore, useAlertStore, useNewsStore, useTerminalStore, useUIStore, useFilteredTrades } from "@/store";
+import { useAuthStore, useMT5Store, useJournalStore, useAlertStore, useNewsStore, useTerminalStore, useUIStore, useFilteredTrades, useRecapStore } from "@/store";
 import SideDrawer from "@/components/ui/SideDrawer";
 import MT5ConnectModal from "@/components/modals/MT5ConnectModal";
 import FilterModal from "@/components/filters/FilterModal";
@@ -13,6 +13,8 @@ import Topbar from "@/components/layout/Topbar";
 import MobileTabBar from "@/components/layout/MobileTabBar";
 import AccountModal from "@/components/modals/AccountModal";
 import ShareModal from "@/components/modals/ShareModal";
+import TradeRecapModal from "@/components/modals/TradeRecapModal";
+import RecapSettingsDrawer from "@/components/settings/RecapSettingsDrawer";
 import { useMT5Sync } from "@/hooks/useMT5Sync";
 import { authGetMe } from "@/lib/auth";
 import { getToken } from "@/lib/api";
@@ -29,6 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { fetchAlerts } = useAlertStore();
   const { loadFromServer: loadNewsSettings } = useNewsStore();
   const { loadLayoutFromServer } = useTerminalStore();
+  const { loadSettings: loadRecapSettings } = useRecapStore();
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const { activeDrawer, closeDrawer, openDrawer } = useUIStore();
@@ -43,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function bootstrap() {
       if (user) {
         // Already have user in memory — load server data
-        await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer()]);
+        await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer(), loadRecapSettings()]);
         setReady(true);
         return;
       }
@@ -65,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       setUser({ id: me.id, email: me.email, name: me.name, image: me.image, provider: "credentials", createdAt: me.createdAt });
       // Load all server data in parallel after auth confirmed
-      await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer()]);
+      await Promise.all([loadStatus(), fetchJournal(), fetchAlerts(), loadNewsSettings(), loadLayoutFromServer(), loadRecapSettings()]);
       setReady(true);
     }
     bootstrap();
@@ -169,6 +172,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
         <ShareModal />
       </SideDrawer>
+
+      <SideDrawer
+        isOpen={activeDrawer === 'recap_settings'}
+        onClose={closeDrawer}
+        title="Trade Recap Settings"
+        subtitle="Customize your post-trade experience"
+      >
+        <RecapSettingsDrawer />
+      </SideDrawer>
+
+      <TradeRecapModal />
     </DataLoader>
   );
 }

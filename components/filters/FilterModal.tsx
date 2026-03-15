@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState } from "react";
 import { useFilterStore } from "@/store";
 import { Trade } from "@/types";
@@ -119,6 +119,30 @@ export default function FilterModal({ onClose, trades }: { onClose: () => void; 
         {tab === "time" && (
           <div className="fade-in flex flex-col gap-4.5">
             <div>
+              <label className={lbl}>Quick Presets</label>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {[
+                  { label: "Hari Ini", days: 0 },
+                  { label: "7 Hari Terakhir", days: 7 },
+                  { label: "30 Hari Terakhir", days: 30 },
+                  { label: "1 Tahun Terakhir", days: 365 },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    onClick={() => {
+                      const now = new Date();
+                      const from = new Date();
+                      from.setDate(now.getDate() - p.days);
+                      set("dateFrom", from.toISOString().split('T')[0]);
+                      set("dateTo", now.toISOString().split('T')[0]);
+                    }}
+                    className="py-2 px-3 rounded-lg bg-surface2 border border-border text-[11px] font-bold text-text2 hover:border-accent hover:text-accent transition-all uppercase tracking-tight"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
               <label className={lbl}>Date Range</label>
               <div className="grid grid-cols-2 gap-2">
                 <div>

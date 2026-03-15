@@ -1,9 +1,15 @@
-﻿"use client";
+"use client";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store";
 import { authLogin, authRegister, authGoogleDemo, authGetMe } from "@/lib/auth";
 import { getToken } from "@/lib/api";
+import { BrandLogo } from "@/components/layout/BrandLogo";
+import { motion, AnimatePresence } from "framer-motion";
+import { Montserrat } from "next/font/google";
+
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800", "900"] });
 
 /* ─── Running Clock + Animated Candlestick Overlay ───────────────────────── */
 function ArtWidget() {
@@ -20,9 +26,6 @@ function ArtWidget() {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const hDeg = (h / 12) * 360;
   const mDeg = (m / 60) * 360;
-  // Second hand used only for smooth updates, or we can just animate minute/hour
-  // User wanted same exact look, so 1 white hand (hour), 1 grey hand (minute).
-  // We'll map the white hand to Hour, grey to Minute.
 
   const candles = [
     { o: 80, c: 60, h: 50, l: 90, bull: false },
@@ -35,77 +38,70 @@ function ArtWidget() {
   ];
 
   return (
-    <div className="relative w-[300px] h-[300px] flex items-center justify-center">
-      {/* Container styling similar to the phone in the reference, but minimal */}
-      <div className="w-[280px] h-[280px] rounded-[40px] bg-[#1a1514] border border-white/5 shadow-2xl overflow-hidden relative flex items-center justify-center">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 1, delay: 0.8, ease: "easeOut" }}
+      className="relative w-[300px] h-[300px] flex items-center justify-center group"
+    >
+      {/* Container styling with Glassmorphism */}
+      <div className="w-[280px] h-[280px] rounded-[48px] bg-white/5 backdrop-blur-3xl border border-white/10 shadow-2xl overflow-hidden relative flex items-center justify-center transition-all duration-700 group-hover:border-white/20 group-hover:bg-white/10">
 
         {/* Subtle background glow */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-[#f97316]/10" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-accent/10" />
+        
+        {/* Radar-like scanning effect */}
+        <motion.div 
+          animate={{ rotate: 360 }}
+          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          className="absolute inset-0 opacity-10"
+        >
+          <div className="absolute top-1/2 left-1/2 w-[200%] h-[200%] -translate-x-1/2 -translate-y-1/2 bg-[conic-gradient(from_0deg,transparent_0%,rgba(37,99,235,0.4)_10%,transparent_20%)]" />
+        </motion.div>
 
         {/* Running Minimal Clock */}
-        <svg viewBox="0 0 200 200" width="160" height="160" className="absolute opacity-40">
-          <circle cx="100" cy="100" r="90" fill="none" stroke="white" strokeWidth="1.5" strokeOpacity="0.4" />
-          <circle cx="100" cy="100" r="82" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.1" />
-          {/* Hour markers */}
-          {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
-            <line
-              key={deg}
-              x1={100 + Math.sin((deg * Math.PI) / 180) * 85}
-              y1={100 - Math.cos((deg * Math.PI) / 180) * 85}
-              x2={100 + Math.sin((deg * Math.PI) / 180) * 90}
-              y2={100 - Math.cos((deg * Math.PI) / 180) * 90}
-              stroke="white" strokeWidth={deg % 90 === 0 ? "2" : "1"} opacity={deg % 90 === 0 ? "0.8" : "0.3"}
-            />
-          ))}
+        <svg viewBox="0 0 200 200" width="160" height="160" className="absolute opacity-50 z-10">
+          <circle cx="100" cy="100" r="90" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.2" />
+          <circle cx="100" cy="100" r="82" fill="none" stroke="white" strokeWidth="0.5" strokeOpacity="0.1" />
           {/* Hands */}
           <line
             x1="100" y1="100"
             x2={100 + Math.sin(toRad(hDeg)) * 40}
             y2={100 - Math.cos(toRad(hDeg)) * 40}
-            stroke="white" strokeWidth="3" strokeLinecap="round"
+            stroke="white" strokeWidth="2.5" strokeLinecap="round"
             style={{ transition: "all .5s cubic-bezier(.4,0,.2,1)" }}
           />
           <line
             x1="100" y1="100"
-            x2={100 + Math.sin(toRad(mDeg)) * 40}
-            y2={100 - Math.cos(toRad(mDeg)) * 40}
-            stroke="#d1d5db" strokeWidth="2" strokeLinecap="round"
+            x2={100 + Math.sin(toRad(mDeg)) * 55}
+            y2={100 - Math.cos(toRad(mDeg)) * 55}
+            stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.4"
             style={{ transition: "all .5s cubic-bezier(.4,0,.2,1)" }}
           />
-          <circle cx="100" cy="100" r="4" fill="#f97316" />
+          <circle cx="100" cy="100" r="3" fill="#2563eb" />
         </svg>
 
-        {/* Animated Candlestick Passes Through */}
-        <div className="absolute inset-0 z-10" style={{ maskImage: "linear-gradient(to right, transparent, black 15%, black 85%, transparent)", WebkitMaskImage: "linear-gradient(to right, transparent, black 15%, black 85%, transparent)" }}>
-          {/* Scroll wrapper */}
-          <div className="w-[600px] h-full absolute left-0 top-0 flex items-center" style={{ animation: "scrollCandle 6s linear infinite" }}>
+        {/* Candlestick visualization */}
+        <div className="absolute inset-0 z-0" style={{ maskImage: "linear-gradient(to right, transparent, black 25%, black 75%, transparent)", WebkitMaskImage: "linear-gradient(to right, transparent, black 25%, black 75%, transparent)" }}>
+          <div className="w-[600px] h-full absolute left-0 top-0 flex items-center" style={{ animation: "scrollCandle 12s linear infinite" }}>
             <svg viewBox="0 0 600 280" className="w-[600px] h-[280px]">
-              {/* Double array for seamless scroll */}
               {[...candles, ...candles, ...candles].map((c, i) => {
-                const x = 40 + i * 36;
+                const x = 40 + i * 40;
                 const top = Math.min(c.o, c.c);
                 const height = Math.abs(c.o - c.c) || 2;
-                const color = c.bull ? "#10b981" : "#f43f5e";
+                const color = c.bull ? "#0ecb81" : "#f84960";
                 return (
                   <g key={i}>
-                    {/* Wick */}
-                    <line x1={x + 6} y1={c.h} x2={x + 6} y2={c.l} stroke={color} strokeWidth="1.5" strokeLinecap="round" opacity="0.8" />
-                    {/* Body */}
-                    <rect x={x} y={top} width="12" height={height} rx="2" fill={color} opacity="0.95" />
+                    <line x1={x + 6} y1={c.h} x2={x + 6} y2={c.l} stroke={color} strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+                    <rect x={x} y={top} width="12" height={height} rx="1.5" fill={color} opacity="0.6" />
                   </g>
                 );
               })}
             </svg>
           </div>
         </div>
-
-        {/* Bottom icon to match reference */}
-        <div className="absolute bottom-6 flex gap-3">
-          <div className="w-5 h-5 rounded-md border border-white/20 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-[#10b981]" /></div>
-          <div className="w-5 h-5 rounded-md border border-[#f97316]/40 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-[#f97316]" /></div>
-        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -122,43 +118,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
 
-  // Track focus vs filled state for smooth background transition
   const [focusedField, setFocusedField] = useState<string | null>(null);
-
-  const [blurStr, setBlurStr] = useState("0px");
 
   useEffect(() => {
     setMounted(true);
-
-    // Set meta theme-color to explicitly tell React Native WebView to color the status bar
-    let metaTheme = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement;
-    let originalTheme = '';
-    if (!metaTheme) {
-      metaTheme = document.createElement('meta');
-      metaTheme.name = "theme-color";
-      document.head.appendChild(metaTheme);
-    } else {
-      originalTheme = metaTheme.content;
-    }
-    metaTheme.content = "#2e2523";
-
     if (!user && getToken()) {
       authGetMe().then((u) => {
         if (u) setUser({ id: u.id, email: u.email, name: u.name, provider: "credentials", createdAt: u.createdAt });
       });
     }
-
-    const handleScroll = () => {
-      const y = window.scrollY;
-      const blurVal = Math.min(y / 15, 12); // Max blur 12px
-      setBlurStr(`${blurVal}px`);
-    };
-    window.addEventListener("scroll", handleScroll);
-
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (metaTheme) metaTheme.content = originalTheme || (document.documentElement.classList.contains('dark') ? '#0f1117' : '#f4f6f8');
-    };
   }, []);
 
   useEffect(() => { if (user) router.replace("/dashboard"); }, [user]);
@@ -191,231 +159,252 @@ export default function LoginPage() {
   };
 
   const inputStyle = (field: string, val: string): React.CSSProperties => {
-    const isFilled = val.length > 0;
     const isFocused = focusedField === field;
     return {
       width: "100%",
-      padding: "16px 22px",
-      borderRadius: "999px", // Pill shape from ref
-      border: `1px solid ${isFocused ? "#ea580c" : "#e5e7eb"}`,
-      // Background changes to white when filled, light grey when empty
-      background: isFilled || isFocused ? "#ffffff" : "#f8fafc",
-      fontSize: "14.5px",
+      padding: "16px 24px",
+      borderRadius: "20px",
+      border: `1.5px solid ${isFocused ? "#3b82f6" : "#f1f5f9"}`,
+      background: isFocused ? "#ffffff" : "#f8fafc",
+      fontSize: "14px",
+      fontWeight: "600",
       color: "#0f172a",
       outline: "none",
-      transition: "all 0.2s ease",
-      fontFamily: "inherit",
+      transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+      boxShadow: isFocused ? "0 4px 12px rgba(59, 130, 246, 0.08)" : "none",
     };
   };
 
   return (
-    <>
+    <div className={`${montserrat.className} selection:bg-accent/20 selection:text-accent`}>
       <style>{`
         @keyframes scrollCandle {
           from { transform: translateX(0); }
-          to { transform: translateX(-252px); } /* 7 candles * 36px spacing */
+          to { transform: translateX(-280px); }
         }
-        @keyframes subtleZoom {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.03); }
+        @keyframes pulse-ring {
+          0% { transform: scale(0.95); opacity: 0; }
+          50% { transform: scale(1); opacity: 0.05; }
+          100% { transform: scale(1.05); opacity: 0; }
         }
-        input::placeholder { color: #9ca3af; }
-        /* Hide scrollbar on mobile if needed */
+        input::placeholder { color: #94a3b8; font-weight: 500; }
         ::-webkit-scrollbar { width: 0px; background: transparent; }
       `}</style>
 
-      {/* Main split screen wrapper */}
-      <div
-        className="min-h-screen flex flex-col lg:flex-row font-sans"
-        style={{ backgroundColor: "#2e2523" }} // Dark earthy tone from reference
-      >
+      <div className="min-h-screen flex flex-col lg:flex-row bg-[#0b0e11] overflow-hidden">
 
         {/* ── LEFT PANEL ─────────────────────────────────────────────── */}
-        <div className="sticky top-0 z-10 flex flex-col relative overflow-hidden w-full lg:w-auto h-[480px] lg:h-auto lg:flex-[1_1_50%] shrink-0 p-8 lg:p-10 justify-center items-center">
+        <div className="relative w-full lg:w-auto lg:flex-[1_1_55%] p-8 lg:p-16 flex flex-col justify-center items-center overflow-hidden">
+          
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.15),transparent_50%),radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.05),transparent_50%)]" />
+          <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] pointer-events-none" />
 
-          {/* Top text */}
-          <div className="hidden lg:block text-white/40 text-[13px] tracking-wide absolute top-10 left-10">
-            Track smarter – automated trading journals for you.
-          </div>
-
-          {/* Center graphic (wireframe circles) & Headline */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            {/* Concentric circles */}
-            <div className="absolute w-[300px] h-[300px] lg:w-[400px] lg:h-[400px] rounded-full border border-white/5" />
-            <div className="absolute w-[400px] h-[400px] lg:w-[500px] lg:h-[500px] rounded-full border border-white/5" />
-            <div className="absolute w-[500px] h-[500px] lg:w-[600px] lg:h-[600px] rounded-full border border-white/5" />
-            {/* Crosshairs */}
-            <div className="absolute w-[100vw] lg:w-[600px] h-[1px] bg-white/5" />
-            <div className="absolute w-[1px] h-[100vh] lg:h-[600px] bg-white/5" />
+            {[1, 2, 3, 4].map((i) => (
+              <motion.div
+                key={i}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ 
+                  scale: [1, 1.05, 1],
+                  opacity: [0.03, 0.06, 0.03]
+                }}
+                transition={{ 
+                  duration: 4 + i * 2, 
+                  repeat: Infinity, 
+                  ease: "easeInOut",
+                  delay: i * 0.5
+                }}
+                className="absolute rounded-full border border-white"
+                style={{ 
+                  width: `${300 + i * 150}px`, 
+                  height: `${300 + i * 150}px` 
+                }}
+              />
+            ))}
           </div>
 
-          <h1 className="relative z-10 text-[38px] lg:text-[64px] font-bold text-white leading-[1.05] tracking-tight text-center max-w-[400px] mb-8 lg:absolute lg:top-1/2 lg:-translate-y-1/2 lg:mt-[-50px]">
-            Track<br />your trades
-          </h1>
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="absolute top-10 left-10 hidden lg:flex items-center gap-3"
+          >
+            <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            <span className="text-white/40 text-[11px] font-black uppercase tracking-[0.2em]">Next-Gen Trading Journal</span>
+          </motion.div>
 
-          {/* Bottom left widget (Centered on mobile, absolute on desktop) */}
-          <div className="relative z-20 lg:absolute lg:bottom-16 lg:left-16 transform scale-85 lg:scale-100 origin-center">
+          <div className="relative z-10 flex flex-col items-center">
+            <motion.h1 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="text-[48px] lg:text-[84px] font-black text-white leading-[0.9] tracking-[-0.04em] text-center mb-12"
+            >
+              Track <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-tr from-white via-white to-accent/60">your trades</span>
+            </motion.h1>
+
             <ArtWidget />
           </div>
 
-          {/* Bottom center watermark icon (from ref) */}
-          <div className="hidden lg:block absolute bottom-10 left-1/2 -translate-x-1/2 opacity-20 text-[#f97316]">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 8v8M8 12h8" />
-            </svg>
+          <div className="absolute bottom-12 left-12 hidden xl:block">
+            <motion.div 
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className="px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center gap-3"
+            >
+              <div className="w-8 h-8 rounded-lg bg-green/20 flex items-center justify-center text-green">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
+              </div>
+              <div>
+                <div className="text-[10px] font-black text-white/40 uppercase tracking-widest">Growth</div>
+                <div className="text-[14px] font-black text-white">+24.8%</div>
+              </div>
+            </motion.div>
           </div>
-
-          {/* Dynamic Blur Overlay during Mobile Scroll */}
-          <div
-            className="absolute inset-0 z-50 pointer-events-none lg:hidden"
-            style={{
-              backdropFilter: `blur(${blurStr})`,
-              WebkitBackdropFilter: `blur(${blurStr})`,
-              backgroundColor: `rgba(46, 37, 35, ${Math.min(parseFloat(blurStr) / 25, 0.4)})`
-            }}
-          />
         </div>
 
-        {/* ── RIGHT PANEL (White Area) ───────────────────────────────── */}
-        <div
-          className="flex flex-col relative bg-white w-full lg:w-[600px] xl:w-[700px] flex-shrink-0 rounded-t-[40px] lg:rounded-t-none lg:rounded-l-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.3)] lg:shadow-2xl z-30"
-          style={{ padding: "40px clamp(24px, 6vw, 60px)" }}
+        {/* ── RIGHT PANEL ─────────────────────────────────────────────── */}
+        <motion.div
+          initial={{ x: 60, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="flex flex-col relative bg-white w-full lg:w-[500px] xl:w-[600px] flex-shrink-0 lg:rounded-l-[48px] shadow-2xl z-30"
+          style={{ padding: "40px clamp(24px, 5vw, 64px)" }}
         >
-
-          {/* Top nav inside white panel */}
-          <div className="flex justify-between items-center w-full mb-auto pb-10">
-            {/* Brand Logo */}
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #3b82f6, #2563eb)" }}>
-                <div className="w-4 h-4 rounded-full bg-white" />
-              </div>
-              <span className="text-[20px] font-bold text-[#0f172a] tracking-tight">TimeJournal</span>
-            </div>
-
-            {/* Top Right Actions */}
+          <div className="flex justify-between items-center w-full mb-12">
+            <BrandLogo />
             <button
               onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); }}
-              className="flex items-center gap-2 text-[14px] text-[#475569] hover:text-[#0f172a] font-medium transition-colors"
+              className="group flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-text3 hover:text-accent transition-all"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              {mode === "login" ? "Sign Up" : "Sign In"}
+              {mode === "login" ? "Need an account?" : "Have an account?"}
+              <span className="text-accent underline underline-offset-4 decoration-2">
+                {mode === "login" ? "Register" : "Login"}
+              </span>
             </button>
           </div>
 
-          {/* Center Form Area */}
-          <div className="w-full max-w-[420px] mx-auto my-auto py-10">
-            <h2 className="text-[42px] font-semibold text-[#0f172a] tracking-[-1px] mb-10">
-              {mode === "login" ? "Sign In" : "Sign Up"}
-            </h2>
+          <div className="w-full max-w-[400px] mx-auto flex-1 flex flex-col justify-center py-10">
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <h2 className="text-[40px] font-black text-[#0f172a] tracking-[-0.03em] mb-2 leading-none">
+                {mode === "login" ? "Welcome Back" : "Start Trading"}
+              </h2>
+              <p className="text-[14px] font-medium text-text3 mb-10">
+                {mode === "login" ? "Enter your credentials to access your console." : "Create your account to start journaling your journey."}
+              </p>
+            </motion.div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <AnimatePresence mode="popLayout">
+                {mode === "register" && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                  >
+                    <input
+                      style={inputStyle("name", name)}
+                      value={name} onChange={e => setName(e.target.value)}
+                      placeholder="Display Name" required
+                      onFocus={() => setFocusedField("name")} onBlur={() => setFocusedField(null)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              {mode === "register" && (
-                <div>
-                  <input
-                    style={inputStyle("name", name)}
-                    value={name} onChange={e => setName(e.target.value)}
-                    placeholder="Full Name" required
-                    onFocus={() => setFocusedField("name")} onBlur={() => setFocusedField(null)}
-                  />
-                </div>
-              )}
-
-              <div>
-                <input
-                  style={inputStyle("email", email)}
-                  type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="Email or Username" required
-                  onFocus={() => setFocusedField("email")} onBlur={() => setFocusedField(null)}
-                />
-              </div>
+              <input
+                style={inputStyle("email", email)}
+                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="Email address" required
+                onFocus={() => setFocusedField("email")} onBlur={() => setFocusedField(null)}
+              />
 
               <div className="relative">
                 <input
-                  style={{ ...inputStyle("pw", password), paddingRight: "48px" }}
+                  style={{ ...inputStyle("pw", password), paddingRight: "56px" }}
                   type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="Password" required minLength={6}
                   onFocus={() => setFocusedField("pw")} onBlur={() => setFocusedField(null)}
                 />
                 <button
                   type="button" onClick={() => setShowPw(p => !p)}
-                  className="absolute right-[18px] top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#6b7280] transition-colors p-1"
+                  className="absolute right-[20px] top-1/2 -translate-y-1/2 text-text3 hover:text-text transition-colors p-1"
                 >
                   {showPw
-                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
-                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                   }
                 </button>
               </div>
 
               {error && (
-                <div className="text-[13px] text-[#ef4444] px-2">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-red/5 text-red text-[12px] font-bold px-4 py-3 rounded-xl border border-red/10 flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                   {error}
-                </div>
+                </motion.div>
               )}
 
-              {/* Forgot password mimicking the reference */}
               {mode === "login" && (
-                <div className="mt-1 mb-4">
-                  <span className="text-[13.5px] font-medium text-[#2563eb] cursor-pointer hover:underline px-2">
+                <div className="flex justify-end">
+                  <span className="text-[12px] font-bold text-accent hover:underline cursor-pointer">
                     Forgot password?
                   </span>
                 </div>
               )}
 
-              {/* Submit Button (Pill, gradient blue) */}
               <button
                 type="submit" disabled={loading}
-                className="w-full rounded-full py-4 mt-2 flex items-center justify-center gap-3 text-white font-semibold text-[15px] shadow-lg transition-transform hover:-translate-y-[1px] disabled:opacity-70 disabled:cursor-not-allowed"
-                style={{ background: "linear-gradient(to right, #3b82f6, #1d4ed8)", boxShadow: "0 8px 20px -6px rgba(37,99,235,0.5)" }}
+                className="group w-full rounded-2xl py-4.5 bg-accent text-white font-black text-[14px] uppercase tracking-widest shadow-xl shadow-accent/20 hover:shadow-accent/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-70 flex items-center justify-center gap-3"
               >
-                {loading
-                  ? <div className="w-[20px] h-[20px] rounded-full border-[2.5px] border-white/30 border-t-white animate-[spin_1s_linear_infinite]" />
-                  : <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" />
-                    </svg>
-                    {mode === "login" ? "Sign In" : "Sign Up"}
+                {loading ? (
+                  <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                ) : (
+                  <>
+                    <span>{mode === "login" ? "Initialize Logic" : "Create Console"}</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="transition-transform group-hover:translate-x-1"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
                   </>
-                }
+                )}
               </button>
-
             </form>
 
-            <div className="mt-8 flex items-center gap-4">
-              <div className="h-[1px] flex-1 bg-[#f1f5f9]" />
-              <span className="text-[12px] text-[#cbd5e1] uppercase tracking-wider font-semibold">Or</span>
-              <div className="h-[1px] flex-1 bg-[#f1f5f9]" />
+            <div className="relative my-10 flex items-center">
+              <div className="flex-1 border-t border-slate-100" />
+              <span className="px-4 text-[11px] font-black text-slate-300 uppercase tracking-widest">Protocol Sync</span>
+              <div className="flex-1 border-t border-slate-100" />
             </div>
 
-            {/* Guest button style */}
             <button
               onClick={handleGoogle} disabled={loading}
-              className="w-full mt-8 rounded-full py-[14px] border border-[#e2e8f0] bg-white text-[#475569] font-medium text-[14.5px] flex items-center justify-center gap-2.5 hover:bg-[#f8fafc] hover:border-[#cbd5e1] transition-all"
+              className="w-full rounded-2xl py-4 border border-slate-200 bg-white text-text2 font-bold text-[14px] flex items-center justify-center gap-3 hover:bg-slate-50 hover:border-slate-300 active:bg-slate-100 transition-all"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-              </svg>
-              Sign in as Guest (Demo)
+              <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+              </div>
+              Sign in as Guest (Terminal Demo)
             </button>
           </div>
 
-          {/* Footer inside white panel */}
-          <div className="mt-auto pt-10 flex justify-between items-center text-[11px] text-[#9ca3af]">
-            <div>© 2025 TimeJournal Inc.</div>
-            <div className="flex gap-6">
-              <span className="cursor-pointer hover:text-[#475569]">Contact Us</span>
-              <span className="cursor-pointer hover:text-[#475569] flex items-center gap-1">
-                English <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+          <div className="mt-auto flex justify-between items-center text-[10px] font-bold text-slate-300 uppercase tracking-widest pt-10">
+            <div>© 2025 time journal.</div>
+            <div className="flex gap-8">
+              <span className="hover:text-slate-500 cursor-pointer">Support</span>
+              <span className="hover:text-slate-500 cursor-pointer flex items-center gap-1.5">
+                EN <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6" /></svg>
               </span>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
-    </>
+    </div>
   );
 }

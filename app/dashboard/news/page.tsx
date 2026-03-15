@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNewsStore } from '@/store';
@@ -211,7 +211,7 @@ export default function NativeNewsPage() {
                         <div className="flex items-center justify-between mb-5 border-b border-border/50 pb-4">
                             <div>
                                 <h3 className="text-[13px] font-bold text-text">Push Notification Engine</h3>
-                                <p className="text-[11px] text-text3 mt-0.5">TimeJournal akan mengirim notifikasi browser tepat sebelum berita ForexFactory rilis.</p>
+                                <p className="text-[11px] text-text3 mt-0.5">time journal. akan mengirim notifikasi browser tepat sebelum berita ForexFactory rilis.</p>
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <span className="text-[11px] font-bold text-text2">Master Toggle</span>

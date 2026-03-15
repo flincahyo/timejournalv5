@@ -11,9 +11,10 @@ Run:
     python main.py
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict, Any, Set
 import datetime
@@ -292,6 +293,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount uploads static folder
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 security = HTTPBearer(auto_error=False)
 
 
@@ -343,6 +348,28 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    image: Optional[str] = None
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class TradeMetadataUpdate(BaseModel):
+    setup: Optional[str] = None
+    emotion: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+class RecapSettingsUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    emotion_choices: Optional[list[str]] = None
+    setup_choices: Optional[list[str]] = None
+    profit_sound: Optional[str] = None
+    loss_sound: Optional[str] = None
+
 
 # ── Auth Endpoints ────────────────────────────────────────────────────────────
 @app.post("/api/auth/register")
@@ -371,6 +398,13 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         news_settings={
             "enabled": False, "currencies": ["USD"],
             "impacts": ["High"], "minutesBefore": 5
+        },
+        recap_settings={
+            "enabled": True,
+            "emotion_choices": ["Confident", "Anxious", "Neutral", "Revengeful", "Greedy", "Fearful"],
+            "setup_choices": ["A+ Setup", "Followed Plan", "FOMO Entry", "Early Exit", "Poor R:R", "Chasing Price"],
+            "profit_sound": "default_profit",
+            "loss_sound": "default_loss"
         }
     )
     # Default journal tags
@@ -401,8 +435,136 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     token = create_access_token({"sub": user.id})
     return {
         "token": token,
-        "user": {"id": user.id, "email": user.email, "name": user.name, "createdAt": user.created_at.isoformat()},
+        "user": {"id": user.id, "email": user.email, "name": user.name, "image": user.image, "createdAt": user.created_at.isoformat()},
     }
+
+
+@app.put("/api/auth/profile")
+async def update_profile(req: ProfileUpdateRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if req.name is not None:
+        user.name = req.name.strip()
+    if req.email is not None:
+        user.email = req.email.lower().strip()
+    if req.image is not None:
+        user.image = req.image
+    
+    await db.commit()
+    await db.refresh(user)
+    return {"id": user.id, "email": user.email, "name": user.name, "image": user.image, "createdAt": user.created_at.isoformat()}
+
+
+@app.put("/api/auth/password")
+async def change_password(req: PasswordChangeRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not verify_password(req.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Password lama salah")
+    
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password baru minimal 6 karakter")
+        
+    user.hashed_password = hash_password(req.new_password)
+    await db.commit()
+    return {"ok": True, "message": "Password berhasil diganti"}
+
+
+@app.post("/api/auth/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Ensure uploads directory exists
+    os.makedirs("uploads", exist_ok=True)
+    
+    # Generate unique filename
+    ext = os.path.splitext(file.filename)[1]
+    filename = f"{uuid.uuid4()}{ext}"
+    filepath = os.path.join("uploads", filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(await file.read())
+    
+    # Accessible via static mount
+    url = f"/uploads/{filename}"
+    
+    # Optional: Update user image in DB immediately
+    user.image = url
+    await db.commit()
+    
+    return {"url": url}
+
+
+@app.post("/api/auth/upload-sound")
+async def upload_sound(file: UploadFile = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Upload custom notification sounds (mp3, wav, etc.)"""
+    os.makedirs("uploads/sounds", exist_ok=True)
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".mp3", ".wav", ".ogg", ".m4a"]:
+        raise HTTPException(status_code=400, detail="Unsupported audio format")
+
+    filename = f"{uuid.uuid4()}{ext}"
+    filepath = os.path.join("uploads/sounds", filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(await file.read())
+    
+    url = f"/uploads/sounds/{filename}"
+    return {"url": url}
+
+
+@app.get("/api/auth/settings")
+async def get_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = result.scalar_one_or_none()
+    if not settings:
+        settings = UserSettings(user_id=user.id)
+        db.add(settings)
+        await db.commit()
+        await db.refresh(settings)
+    
+    return {
+        "theme": settings.theme,
+        "news_settings": settings.news_settings,
+        "recap_settings": settings.recap_settings,
+        "terminal_layout": settings.terminal_layout
+    }
+
+
+@app.patch("/api/auth/settings/recap")
+async def update_recap_settings(req: RecapSettingsUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = result.scalar_one_or_none()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+    
+    current = dict(settings.recap_settings or {})
+    if req.enabled is not None: current["enabled"] = req.enabled
+    if req.emotion_choices is not None: current["emotion_choices"] = req.emotion_choices
+    if req.setup_choices is not None: current["setup_choices"] = req.setup_choices
+    if req.profit_sound is not None: current["profit_sound"] = req.profit_sound
+    if req.loss_sound is not None: current["loss_sound"] = req.loss_sound
+    
+    settings.recap_settings = current
+    await db.commit()
+    return {"ok": True, "settings": current}
+
+
+@app.patch("/api/trades/{ticket}")
+async def update_trade_metadata(ticket: str, req: TradeMetadataUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Update trade metadata like setup, emotion, notes."""
+    # Find trade across all accounts and ensure it belongs to user
+    result = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.user_id == user.id))
+    trade = result.scalar_one_or_none()
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    # Update JSONB data field
+    data = dict(trade.data)
+    if req.setup is not None: data["setup"] = req.setup
+    if req.emotion is not None: data["emotion"] = req.emotion
+    if req.notes is not None: data["note"] = req.notes # The field in Trade type is 'note'
+    if req.tags is not None: data["tags"] = req.tags
+    
+    trade.data = data
+    await db.commit()
+    return {"ok": True, "trade": trade.data}
 
 
 @app.get("/api/health")
@@ -411,7 +573,7 @@ async def health_check():
 
 @app.get("/api/auth/me")
 async def get_me(user: User = Depends(get_current_user)):
-    return {"id": user.id, "email": user.email, "name": user.name, "createdAt": user.created_at.isoformat()}
+    return {"id": user.id, "email": user.email, "name": user.name, "image": user.image, "createdAt": user.created_at.isoformat()}
 
 
 # ── MT5 Models ────────────────────────────────────────────────────────────────
@@ -1086,13 +1248,22 @@ async def clear_alert_history(user: User = Depends(get_current_user), db: AsyncS
 async def get_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     s = await db.get(UserSettings, user.id)
     if not s:
-        return {"theme": "light", "newsSettings": {"enabled": False, "currencies": ["USD"], "impacts": ["High"], "minutesBefore": 5}}
-    return {"theme": s.theme, "newsSettings": s.news_settings}
+        return {
+            "theme": "light", 
+            "newsSettings": {"enabled": False, "currencies": ["USD"], "impacts": ["High"], "minutesBefore": 5},
+            "terminalLayout": None
+        }
+    return {
+        "theme": s.theme, 
+        "newsSettings": s.news_settings,
+        "terminalLayout": s.terminal_layout
+    }
 
 
 class SettingsUpdateRequest(BaseModel):
     theme: Optional[str] = None
     newsSettings: Optional[dict] = None
+    terminalLayout: Optional[dict] = None
     expo_push_token: Optional[str] = None
 
 @app.put("/api/settings")
@@ -1105,6 +1276,8 @@ async def update_settings(req: SettingsUpdateRequest, user: User = Depends(get_c
         s.theme = req.theme
     if req.newsSettings is not None:
         s.news_settings = req.newsSettings
+    if req.terminalLayout is not None:
+        s.terminal_layout = req.terminalLayout
     if req.expo_push_token is not None:
         s.expo_push_token = req.expo_push_token
     s.updated_at = datetime.datetime.utcnow()
@@ -1309,10 +1482,12 @@ async def _alert_evaluator_loop():
                             
                             if triggered:
                                 _alert_notified[alert_id] = now
-                                await send_expo_push_notification(
-                                    push_token, title, body,
-                                    {"alertId": alert_id, "symbol": symbol}
-                                )
+                                
+                                if push_token:
+                                    await send_expo_push_notification(
+                                        push_token, title, body,
+                                        {"alertId": alert_id, "symbol": symbol}
+                                    )
                                 
                                 # Disable "Once" alerts
                                 if alert.get("frequency") == "Once":

@@ -150,17 +150,17 @@ export default function CalendarPage() {
             </>
           )}
         </div>
-        <div className="flex gap-2 justify-end w-full md:w-auto">
-          <button onClick={() => nav(-1)} className="btn-outline py-1.5 px-3.5 text-[15px]">‹</button>
-          <button onClick={() => { setYr(new Date().getFullYear()); setMo(new Date().getMonth()); }} className="btn-outline py-1.5 px-3 text-xs flex-1 md:flex-none">Today</button>
-          <button onClick={() => nav(1)} className="btn-outline py-1.5 px-3.5 text-[15px]">›</button>
+        <div className="flex gap-1.5 md:gap-2 justify-end w-full md:w-auto">
+          <button onClick={() => nav(-1)} className="btn-outline py-1 md:py-1.5 px-2.5 md:px-3.5 text-[14px] md:text-[15px]">‹</button>
+          <button onClick={() => { setYr(new Date().getFullYear()); setMo(new Date().getMonth()); }} className="btn-outline py-1 md:py-1.5 px-2 md:px-3 text-[10px] md:text-xs flex-1 md:flex-none">Today</button>
+          <button onClick={() => nav(1)} className="btn-outline py-1 md:py-1.5 px-2.5 md:px-3.5 text-[14px] md:text-[15px]">›</button>
         </div>
       </div>
 
       {/* Day headers */}
       <div className="grid grid-cols-7 gap-1">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-          <div key={d} className="text-center text-[12px] text-text3 py-2 font-bold tracking-[.04em]">{d}</div>
+          <div key={d} className="text-center text-[10px] md:text-[12px] text-text3 py-1.5 md:py-2 font-bold tracking-[.04em]">{d}</div>
         ))}
       </div>
 
@@ -175,17 +175,17 @@ export default function CalendarPage() {
           const isSel = sel === ds;
           const isWknd = [0, 6].includes(new Date(yr, mo, day).getDay());
           return (
-            <div key={day} onClick={() => setSel(isSel ? null : ds)} className={`rounded-lg py-2.5 px-2.5 min-h-[72px] flex flex-col cursor-pointer transition-all duration-150 ${isSel ? 'bg-accent3 border-accent' : `bg-surface border ${isToday ? 'border-indigo-500/50' : 'border-border'} hover:border-accent`} ${isWknd && !data ? 'opacity-45' : 'opacity-100'} border`}
+            <div key={day} onClick={() => setSel(isSel ? null : ds)} className={`rounded-lg py-1.5 md:py-2.5 px-1 md:px-2.5 min-h-[60px] md:min-h-[72px] flex flex-col cursor-pointer transition-all duration-150 ${isSel ? 'bg-accent3 border-accent' : `bg-surface border ${isToday ? 'border-indigo-500/50' : 'border-border'} hover:border-accent`} ${isWknd && !data ? 'opacity-45' : 'opacity-100'} border`}
             >
-              <div className={`text-[14px] mb-1 leading-none ${isToday ? 'text-accent2 font-bold' : isSel ? 'text-accent2' : 'text-text3 font-normal'}`}>{day}</div>
+              <div className={`text-[12px] md:text-[14px] mb-0.5 md:mb-1 leading-none ${isToday ? 'text-accent2 font-bold' : isSel ? 'text-accent2' : 'text-text3 font-normal'}`}>{day}</div>
               {data && (
                 <div className="flex-1 flex flex-col justify-between">
-                  <div className={`text-[12px] font-bold py-0.5 px-2 rounded-[4px] inline-block self-start ${data.pnl >= 0 ? 'bg-green-bg text-green' : 'bg-red-bg text-red'}`}>
+                  <div className={`text-[9px] md:text-[12px] font-bold py-0 md:py-0.5 px-1 md:px-2 rounded-[3px] md:rounded-[4px] inline-block self-start whitespace-nowrap overflow-hidden text-ellipsis max-w-full ${data.pnl >= 0 ? 'bg-green-bg text-green' : 'bg-red-bg text-red'}`}>
                     {data.pnl >= 0 ? "+" : "-"}${Math.abs(data.pnl).toFixed(0)}
                   </div>
-                  <div className="flex items-center justify-between mt-1 text-[10.5px]">
-                    <span className="text-text3 font-medium">{data.count} Trades</span>
-                    <div className="flex gap-1.5 font-bold">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between mt-1 text-[8.5px] md:text-[10.5px] leading-tight">
+                    <span className="text-text3 font-medium truncate">{data.count}<span className="hidden md:inline"> Trades</span><span className="md:hidden">T</span></span>
+                    <div className="flex gap-1 md:gap-1.5 font-bold">
                       <span className="text-[#15803d]">{data.wins}W</span>
                       <span className="text-[#b91c1c]">{data.count - data.wins}L</span>
                     </div>
@@ -208,18 +208,18 @@ export default function CalendarPage() {
           <div className="p-5 border-b border-border bg-surface2/30">
             <h3 className="text-[13.5px] font-bold text-text">Weekly Info</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto scroller-minimal">
+            <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
               <thead>
-                <tr className="border-b border-border text-[10px] uppercase tracking-[.05em] text-text3 font-medium bg-surface/50">
-                  <th className="py-2.5 px-5 font-medium whitespace-nowrap">Week</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Trades</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Win %</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Avg Gain</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Avg Loss</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Biggest Gain</th>
-                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Biggest Loss</th>
-                  <th className="py-2.5 px-5 text-right font-medium whitespace-nowrap">PNL</th>
+                <tr className="border-b border-border text-[9px] md:text-[10px] uppercase tracking-[.05em] text-text3 font-medium bg-surface/50">
+                  <th className="py-2.5 px-3 md:px-5 font-medium whitespace-nowrap">Week</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Trades</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Win %</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Avg Gain</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Avg Loss</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Biggest Gain</th>
+                  <th className="py-2.5 px-2 md:px-3 font-medium whitespace-nowrap">Biggest Loss</th>
+                  <th className="py-2.5 px-3 md:px-5 text-right font-medium whitespace-nowrap">PNL</th>
                 </tr>
               </thead>
               <tbody>
@@ -228,16 +228,16 @@ export default function CalendarPage() {
                   const isTotal = r.label === "Total";
                   return (
                     <tr key={r.label} className={`border-b border-border/40 dark:border-white/[0.03] transition-colors ${isTotal ? 'bg-surface2/80 font-bold' : isSummary ? 'bg-surface/40' : 'hover:bg-surface3/30'}`}>
-                      <td className={`py-4 px-5 text-[12px] whitespace-nowrap ${isSummary ? 'font-bold text-text' : 'font-semibold text-text2'}`}>{r.label}</td>
-                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? Number(r.trades).toFixed(isTotal ? 0 : 1) : '-'}</td>
-                      <td className={`py-4 px-3 text-[12px] font-mono ${r.trades > 0 || isSummary ? (r.winRate >= 50 ? 'text-green' : 'text-red') : 'text-text3'}`}>
+                      <td className={`py-3 md:py-4 px-3 md:px-5 text-[11px] md:text-[12px] whitespace-nowrap ${isSummary ? 'font-bold text-text' : 'font-semibold text-text2'}`}>{r.label}</td>
+                      <td className="py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? Number(r.trades).toFixed(isTotal ? 0 : 1) : '-'}</td>
+                      <td className={`py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono ${r.trades > 0 || isSummary ? (r.winRate >= 50 ? 'text-green' : 'text-red') : 'text-text3'}`}>
                         {r.trades > 0 || isSummary ? `${r.winRate.toFixed(1)}%` : '-'}
                       </td>
-                      <td className="py-4 px-3 text-[12px] font-mono text-green">{r.trades > 0 || isSummary ? fmtUSD(r.avgGain) : '-'}</td>
-                      <td className="py-4 px-3 text-[12px] font-mono text-red">{r.trades > 0 || isSummary ? `-${fmtUSD(r.avgLoss)}` : '-'}</td>
-                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(r.biggestGain) : '-'}</td>
-                      <td className="py-4 px-3 text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(Math.abs(r.biggestLoss)) : '-'}</td>
-                      <td className={`py-4 px-5 text-right text-[12px] font-mono whitespace-nowrap font-bold ${r.pnl > 0 ? 'text-green' : r.pnl < 0 ? 'text-red' : 'text-text3'}`}>
+                      <td className="py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono text-green">{r.trades > 0 || isSummary ? fmtUSD(r.avgGain) : '-'}</td>
+                      <td className="py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono text-red">{r.trades > 0 || isSummary ? `-${fmtUSD(r.avgLoss)}` : '-'}</td>
+                      <td className="py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(r.biggestGain) : '-'}</td>
+                      <td className="py-3 md:py-4 px-2 md:px-3 text-[11px] md:text-[12px] font-mono text-text3">{r.trades > 0 || isSummary ? fmtUSD(Math.abs(r.biggestLoss)) : '-'}</td>
+                      <td className={`py-3 md:py-4 px-3 md:px-5 text-right text-[11px] md:text-[12px] font-mono whitespace-nowrap font-bold ${r.pnl > 0 ? 'text-green' : r.pnl < 0 ? 'text-red' : 'text-text3'}`}>
                         {r.trades > 0 || isSummary ? fmtUSD(r.pnl) : '-'}
                       </td>
                     </tr>
@@ -271,21 +271,21 @@ export default function CalendarPage() {
             )}
           </div>
 
-          <div className="flex-1 overflow-x-auto overflow-y-auto scrollbar-thin rounded-b-xl">
+          <div className="flex-1 overflow-x-auto overflow-y-auto scroller-minimal rounded-b-xl">
             {selTrades.length > 0 ? (
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[750px] md:min-w-0">
                 <thead className="sticky top-0 z-10 shadow-sm after:absolute after:inset-x-0 after:bottom-0 after:h-[1px] after:bg-border">
                   <tr className="bg-surface2/95 backdrop-blur-md">
-                    <th className="py-1.5 px-3 w-24 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">TIME</th>
-                    <th className="py-1.5 px-3 w-[15%] text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SYMBOL</th>
-                    <th className="py-1.5 px-3 w-20 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">TYPE</th>
-                    <th className="py-1.5 px-3 w-20 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">LOTS</th>
-                    <th className="py-1.5 px-3 w-full text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SETUP</th>
-                    <th className="py-1.5 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SESSION</th>
-                    <th className="py-1.5 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">CLOSE TYPE</th>
-                    <th className="py-1.5 px-3 w-24 text-right text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">PIPS</th>
-                    <th className="py-1.5 px-3 w-28 text-right text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">PNL</th>
-                    <th className="py-1.5 px-3"></th>
+                    <th className="py-2 px-3 w-24 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">TIME</th>
+                    <th className="py-2 px-3 w-[15%] text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SYMBOL</th>
+                    <th className="py-2 px-3 w-20 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">TYPE</th>
+                    <th className="py-2 px-3 w-20 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">LOTS</th>
+                    <th className="py-2 px-3 w-full text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SETUP</th>
+                    <th className="py-2 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">SESSION</th>
+                    <th className="py-2 px-3 text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">CLOSE TYPE</th>
+                    <th className="py-2 px-3 w-24 text-right text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">PIPS</th>
+                    <th className="py-2 px-3 w-28 text-right text-[9px] uppercase tracking-[.05em] text-text3 font-medium whitespace-nowrap">PNL</th>
+                    <th className="py-2 px-3"></th>
                   </tr>
                 </thead>
                 <tbody>

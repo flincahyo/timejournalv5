@@ -54,7 +54,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
       <footer className="py-12 border-t border-border mt-12 bg-surface2/30">
         <div className="max-w-7xl mx-auto px-4 text-center">
           <p className="text-[12px] text-text3 font-bold uppercase tracking-widest opacity-40">
-            Powered by TimeJournal &mdash; Professional MT5 Sync
+            Powered by time journal. &mdash; Professional MT5 Sync
           </p>
         </div>
       </footer>

@@ -8,6 +8,7 @@ import DateRangeModal from "@/components/filters/DateRangeModal";
 import AddTradeModal from "@/components/modals/AddTradeModal";
 import ShareModal from "@/components/modals/ShareModal";
 import { BrandLogo } from "./BrandLogo";
+import { AvatarIcon } from "@/components/ui/AvatarIcon";
 
 
 
@@ -99,6 +100,21 @@ export default function Topbar() {
           {pathname !== '/dashboard/terminal' && (
             <div className="flex items-center gap-2 mr-2">
               <button
+                onClick={() => openDrawer('add_trade')}
+                className="group flex items-center bg-accent text-[#0b0e11] h-9 rounded-lg text-[13px] font-bold hover:opacity-90 active:scale-95 transition-all duration-500 shadow-sm overflow-hidden"
+                title="Add Trade"
+              >
+                <div className="flex items-center justify-center w-9 h-9 shrink-0">
+                  {IcPlus}
+                </div>
+                <div className="max-w-0 group-hover:max-w-[100px] transition-all duration-500 ease-in-out overflow-hidden">
+                  <span className="pr-3.5 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    Add Trade
+                  </span>
+                </div>
+              </button>
+
+              <button
                 onClick={() => openDrawer('share')}
                 className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface2 text-text3 hover:text-accent transition-all"
                 title="Share Portfolio"
@@ -118,13 +134,6 @@ export default function Topbar() {
                   </span>
                 )}
               </button>
-
-              <button
-                onClick={() => openDrawer('add_trade')}
-                className="bg-accent text-[#0b0e11] h-9 px-3.5 md:px-4 rounded-lg text-[13px] font-bold hover:opacity-90 active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
-              >
-                {IcPlus} <span className="hidden sm:inline">Add Trade</span>
-              </button>
             </div>
           )}
 
@@ -133,13 +142,22 @@ export default function Topbar() {
           {/* MT5 Status Bar */}
           <button
             onClick={() => openDrawer('mt5_connect')}
-            className={`flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all ${isConnected ? "hover:bg-green/5 text-green" : "hover:bg-surface2 text-text3"
+            className={`group flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all overflow-hidden ${isConnected ? "hover:bg-green/5 text-green" : "hover:bg-surface2 text-text3"
               }`}
           >
-            <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-green shadow-[0_0_8px_rgba(14,203,129,0.5)]" : "bg-text3 opacity-40"}`} />
-            <span className="text-[13px] font-mono font-bold hidden md:inline">
-              {isConnected ? (account ? `#${account.login}` : "Connected") : "Connect MT5"}
-            </span>
+            <div className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? "bg-green shadow-[0_0_8px_rgba(14,203,129,0.5)]" : "bg-text3 opacity-40"}`} />
+            <div className="flex items-center">
+              <span className="text-[13px] font-mono font-bold whitespace-nowrap">
+                {isConnected ? "Connected" : "Connect MT5"}
+              </span>
+              {isConnected && account && (
+                <div className="max-w-0 group-hover:max-w-[120px] transition-all duration-500 ease-in-out overflow-hidden">
+                  <span className="text-[13px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 ml-2 whitespace-nowrap border-l border-green/20 pl-2">
+                    #{account.login}
+                  </span>
+                </div>
+              )}
+            </div>
           </button>
 
           {/* Theme Toggle - Hidden on Mobile (in Menu) */}
@@ -155,36 +173,11 @@ export default function Topbar() {
             )}
           </button>
 
-          {/* User Icon - Hidden on Mobile (in Menu) */}
           <div
             onClick={() => openDrawer('account')}
-            className="hidden md:flex w-8 h-8 rounded-full bg-surface3 border border-border items-center justify-center cursor-pointer hover:border-accent group transition-all overflow-hidden"
+            className="hidden md:flex w-8 h-8 rounded-full border border-border items-center justify-center cursor-pointer hover:border-accent group transition-all overflow-hidden"
           >
-            {user?.image ? (
-              <img
-                src={user.image}
-                alt={user.name || 'User'}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  // Fallback if image fails to load
-                  (e.target as any).style.display = 'none';
-                  (e.target as any).nextSibling.style.display = 'block';
-                }}
-              />
-            ) : null}
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className={`text-text3 group-hover:text-accent ${user?.image ? 'hidden' : ''}`}
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
+            <AvatarIcon id={user?.image} className="w-full h-full" />
           </div>
         </div>
       </header>

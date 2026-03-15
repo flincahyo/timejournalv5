@@ -14,7 +14,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "TimeJournal — MT5 Trading Journal",
+  title: "time journal. — MT5 Trading Journal",
   description: "Professional forex trading journal with live MT5 sync",
 };
 
