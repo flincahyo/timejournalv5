@@ -12,55 +12,74 @@ import { apiPost } from "@/lib/api";
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function DonutChart({ wins, losses, total }: { wins: number; losses: number; total: number }) {
   const [drawn, setDrawn] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setDrawn(true), 300); return () => clearTimeout(t); }, []);
+  useEffect(() => { 
+    const t = setTimeout(() => setDrawn(true), 150); 
+    return () => clearTimeout(t); 
+  }, []);
 
   const r = 70, cx = 90, cy = 90, sw = 20;
   const circ = 2 * Math.PI * r;
-  const winFrac = total ? wins / total : 0;
-  const lossFrac = total ? losses / total : 0;
-  const beFrac = total ? (total - wins - losses) / total : 0;
-  const GAP = total > 0 ? 4 : 0;
+  
+  const winFrac = total > 0 ? wins / total : 0;
+  const lossFrac = total > 0 ? losses / total : 0;
+  const beFrac = total > 0 ? Math.max(0, 1 - winFrac - lossFrac) : 0;
 
-  // Segments: Win (blue) → Loss (orange) → Breakeven (gray)
+  // PREMIUM CAPSULE LOGIC:
+  // To have rounded segments that touch or have perfect gaps without overlap:
+  // Dash length = (fraction * circumference) - (strokeWidth + desiredGap)
+  // This ensures the rounded "caps" (which add half strokeWidth on each side) don't bleed into each other.
+  const visualGap = total > 1 ? 6 : 0; 
+  const gapAdj = sw + visualGap;
+
   const segments = [
-    { frac: winFrac, color: "#2563eb", label: "Win" }, // Blue 600
+    { frac: winFrac, color: "#2563eb", label: "Win" }, 
+    { frac: lossFrac, color: "#f97316", label: "Loss" },
     { frac: beFrac, color: "var(--surface3)", label: "BE" },
-    { frac: lossFrac, color: "#f97316", label: "Loss" }, // Orange 600
-  ].filter(s => s.frac > 0.001);
+  ].filter(s => s.frac > 0.005);
 
-  let offset = circ * 0.25; // start from top
+  let currentOffset = 0;
+
   return (
     <div className="relative w-[180px] h-[180px] mx-auto">
-      <svg width="180" height="180">
+      <svg width="180" height="180" className="origin-center -rotate-90">
         {/* Track */}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface3)" strokeWidth={sw} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface3)" strokeWidth={sw} opacity={0.15} />
+        
         {/* Segments */}
         {segments.map((seg, i) => {
-          const dash = circ * seg.frac - GAP;
-          const gap = circ - dash;
-          const el = (
-            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
-              stroke={seg.color} strokeWidth={sw}
-              strokeDasharray={drawn ? `${dash} ${gap}` : `0 ${circ}`}
+          const dash = Math.max(0, (seg.frac * circ) - gapAdj);
+          // Offset each segment precisely, adding half the gapAdj to center the segment between its gaps
+          const offset = -(currentOffset + (gapAdj / 2));
+          currentOffset += (seg.frac * circ);
+          
+          return (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={sw}
+              strokeDasharray={drawn ? `${dash} ${circ - dash}` : `0 ${circ}`}
               strokeDashoffset={offset}
               strokeLinecap="round"
-              className="origin-center -rotate-90"
+              className="transition-all duration-1000 ease-out"
               style={{
-                transformOrigin: `${cx}px ${cy}px`,
-                transition: `stroke-dasharray .9s cubic-bezier(.16,1,.3,1) ${i * .12}s`,
+                transitionDelay: `${i * 100}ms`
               }}
             />
           );
-          offset -= dash + GAP;
-          return el;
         })}
-        {/* Center */}
-        <text x={cx} y={cy - 5} textAnchor="middle" className="fill-text text-[24px] font-bold font-sans tracking-[-0.5px]">
-          {total ? `${((wins / total) * 100).toFixed(0)}%` : "—"}
-        </text>
-        <text x={cx} y={cy + 14} textAnchor="middle" className="fill-text3 text-[10.5px] font-semibold font-sans tracking-[0.06em]">
-          WIN RATE
-        </text>
+        {/* Center Text */}
+        <g className="origin-center rotate-90" style={{ transformOrigin: "90px 90px" }}>
+          <text x={cx} y={cy - 5} textAnchor="middle" className="fill-text text-[24px] font-bold font-sans tracking-[-0.5px]">
+            {total ? `${((wins / total) * 100).toFixed(0)}%` : "—"}
+          </text>
+          <text x={cx} y={cy + 14} textAnchor="middle" className="fill-text3 text-[10.5px] font-semibold font-sans tracking-[0.06em]">
+            WIN RATE
+          </text>
+        </g>
       </svg>
     </div>
   );

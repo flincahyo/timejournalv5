@@ -155,8 +155,8 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           isConnected: true,
           connectionParams: { login, server },
           account: res.account || null,
-          trades: (res.trades || []).map(hydrateTrade),
-          liveTrades: res.live_trades || [],
+          trades: (res.trades || []).map(t => hydrateTrade(t, "closed")),
+          liveTrades: (res.live_trades || []).map(t => hydrateTrade(t, "live")),
           isLoading: false,
         });
         // Refresh accounts list
@@ -213,7 +213,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
   fetchTrades: async (accountId) => {
     try {
       const res = await apiGet<{ trades: Trade[] }>(accountId ? `/api/mt5/trades?account_id=${accountId}` : "/api/mt5/trades");
-      set({ trades: (res.trades || []).map(hydrateTrade) });
+      set({ trades: (res.trades || []).map(t => hydrateTrade(t, "closed")) });
     } catch { }
   },
 
@@ -286,31 +286,32 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           const { trades, recapQueue } = get();
           const recapSettings = useRecapStore.getState().settings;
           const rawTrade = msg.trade;
-          const hydrated = hydrateTrade(rawTrade);
+          
+          // Hydrate with 'live' as default if it's coming from MT5 "new_trade" (which usually means open)
+          // But it could also be a "new_trade" msg for a CLOSED trade if the bridge just caught it.
+          const hydrated = hydrateTrade(rawTrade); 
           const tradeId = String(hydrated.id);
           
           const existingIdx = trades.findIndex((t) => String(t.id) === tradeId);
           if (existingIdx === -1) {
-            // New trade
+            // New trade record
             set({ trades: [hydrated, ...trades] });
             
-            // Trigger Recap if closed
-            const isClosed = hydrated.status?.toLowerCase() === 'closed';
-            if (isClosed && (recapSettings?.enabled ?? true)) {
+            // Trigger Recap if it's already closed
+            if (hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
               if (!recapQueue.some(q => String(q.id) === tradeId)) {
                 set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
               }
             }
           } else {
             // Update existing trade
-            const previousStatus = trades[existingIdx].status?.toLowerCase();
+            const previousStatus = trades[existingIdx].status;
             const updated = [...trades];
             updated[existingIdx] = hydrated;
             set({ trades: updated });
 
-            // Trigger Recap if it just CLOSED
-            const isClosed = hydrated.status?.toLowerCase() === 'closed';
-            if (previousStatus !== 'closed' && isClosed && (recapSettings?.enabled ?? true)) {
+            // Trigger Recap if it TRANSITIONED to closed
+            if (previousStatus !== 'closed' && hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
                if (!recapQueue.some(q => String(q.id) === tradeId)) {
                  set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
                }
@@ -633,11 +634,22 @@ export const useShareStore = create<ShareStore>()((set, get) => ({
 }));
 
 // ── Hydration helper ──────────────────────────────────────────────────────────
-function hydrateTrade(t: any): Trade {
-  const ticket = t.ticket || t.id;
+function hydrateTrade(t: any, defaultStatus: "closed" | "live" | "pending" = "closed"): Trade {
   const idValue = t.id || t.ticket;
+  const ticket = t.ticket || t.id;
+
+  // Normalize PnL, Pips, Lots — handle MT5 field variability
+  const pnl = Number(t.pnl ?? t.profit ?? 0);
+  const pips = Number(t.pips ?? t.profitPips ?? 0);
+  const lots = Number(t.lots ?? t.volume ?? 0);
+
+  // Robust Status detection
+  let status = (typeof t.status === "string" ? t.status.toLowerCase() : defaultStatus) as "closed" | "live" | "pending";
   
-  const status = (typeof t.status === "string" ? t.status.toLowerCase() : "closed") as "closed" | "live" | "pending";
+  // High-confidence override: if we have any strong signal of closure
+  if (t.closeTime || t.closePrice || t.close_time || t.close_price || t.time_done || t.exit_price) {
+    status = "closed";
+  }
 
   // Ensure we have a valid openTimeWIB for calendar/journal sorting
   let openTimeWIB = t.openTimeWIB;
@@ -661,13 +673,13 @@ function hydrateTrade(t: any): Trade {
     id: idValue ? String(idValue) : String(Math.random()), 
     ticket: ticket ? Number(ticket) : 0,
     status,
+    pnl,
+    pips,
+    lots,
     openTimeWIB,
     closeTimeWIB,
     session,
-    durationMs,
-    pips: t.pips ?? 0,
-    pnl: t.pnl ?? 0,
-    lots: t.lots ?? 0
+    durationMs
   };
 }
 
@@ -675,7 +687,13 @@ function hydrateTrade(t: any): Trade {
 export function useFilteredTrades() {
   const { trades, liveTrades } = useMT5Store();
   const { filter } = useFilterStore();
-  const all = [...trades, ...liveTrades].map(hydrateTrade);
+  
+  // Historical trades are closed by default
+  const normalizedHistorical = trades.map(t => hydrateTrade(t, "closed"));
+  // Live positions are live by default
+  const normalizedLive = liveTrades.map(t => hydrateTrade(t, "live"));
+  
+  const all = [...normalizedHistorical, ...normalizedLive];
   const filtered = applyFilter(all, filter);
   const stats = calcStats(filtered);
   return { all, filtered, stats };
