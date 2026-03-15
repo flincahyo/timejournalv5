@@ -140,7 +140,7 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
     set({ isConnected: false, account: null, connectionParams: null, trades: [], liveTrades: [], recapQueue: [] }),
 
   addToRecapQueue: (trade) => set((s) => ({ recapQueue: [...s.recapQueue, trade] })),
-  removeFromRecapQueue: (id) => set((s) => ({ recapQueue: s.recapQueue.filter(t => t.id !== id) })),
+  removeFromRecapQueue: (id) => set((s) => ({ recapQueue: s.recapQueue.filter(t => String(t.id) !== String(id)) })),
 
   connectMT5: async (login, password, server) => {
     set({ isLoading: true });
@@ -287,31 +287,31 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           const recapSettings = useRecapStore.getState().settings;
           const rawTrade = msg.trade;
           const hydrated = hydrateTrade(rawTrade);
-          const id = hydrated.id;
+          const tradeId = String(hydrated.id);
           
-          const existingIdx = trades.findIndex((t) => t.id === id);
+          const existingIdx = trades.findIndex((t) => String(t.id) === tradeId);
           if (existingIdx === -1) {
             // New trade
             set({ trades: [hydrated, ...trades] });
             
-            // IF trade is CLOSED and recap is enabled, push to recap queue
-            if (hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
-              // Avoid duplicates in queue
-              if (!recapQueue.find(q => q.id === id)) {
+            // Trigger Recap if closed
+            const isClosed = hydrated.status?.toLowerCase() === 'closed';
+            if (isClosed && (recapSettings?.enabled ?? true)) {
+              if (!recapQueue.some(q => String(q.id) === tradeId)) {
                 set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
               }
             }
           } else {
             // Update existing trade
+            const previousStatus = trades[existingIdx].status?.toLowerCase();
             const updated = [...trades];
-            const previousStatus = updated[existingIdx].status;
             updated[existingIdx] = hydrated;
             set({ trades: updated });
 
-            // IF it just CLOSED and recap is enabled, push to recap queue
-            if (previousStatus !== 'closed' && hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
-               // Avoid duplicates in queue
-               if (!recapQueue.find(q => q.id === id)) {
+            // Trigger Recap if it just CLOSED
+            const isClosed = hydrated.status?.toLowerCase() === 'closed';
+            if (previousStatus !== 'closed' && isClosed && (recapSettings?.enabled ?? true)) {
+               if (!recapQueue.some(q => String(q.id) === tradeId)) {
                  set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
                }
             }
@@ -633,8 +633,10 @@ export const useShareStore = create<ShareStore>()((set, get) => ({
 }));
 
 // ── Hydration helper ──────────────────────────────────────────────────────────
-function hydrateTrade(t: Trade): Trade {
-  const ticket = t.ticket || (t as any).id;
+function hydrateTrade(t: any): Trade {
+  const ticket = t.ticket || t.id;
+  const idValue = t.id || t.ticket;
+  
   const status = (typeof t.status === "string" ? t.status.toLowerCase() : "closed") as "closed" | "live" | "pending";
 
   // Ensure we have a valid openTimeWIB for calendar/journal sorting
@@ -653,8 +655,10 @@ function hydrateTrade(t: Trade): Trade {
     (t.openTime && t.closeTime
       ? Math.max(new Date(t.closeTime).getTime() - new Date(t.openTime).getTime(), 0)
       : 0);
+      
   return {
     ...t,
+    id: idValue ? String(idValue) : String(Math.random()), 
     ticket: ticket ? Number(ticket) : 0,
     status,
     openTimeWIB,
