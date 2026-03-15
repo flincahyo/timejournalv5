@@ -111,7 +111,7 @@ export default function EditTradeModal({ trade, onClose }: { trade: Trade; onClo
         <div className="fixed inset-0 bg-black/70 z-[99999] flex items-center justify-center transition-all duration-300" onClick={onClose}>
             <div className="fade-in bg-surface rounded-2xl p-8 w-[560px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-8">
-                    <div className="text-base font-bold text-text">Edit Trade {trade.ticket !== 0 ? `#${trade.ticket}` : "(Manual)"}</div>
+                    <div className="text-base font-bold text-text">Edit Trade {trade.ticket ? `#${trade.ticket}` : `ID: ${trade.id}`}</div>
                     <button onClick={onClose} className="text-text3 text-[22px] hover:text-text transition-colors">×</button>
                 </div>
 

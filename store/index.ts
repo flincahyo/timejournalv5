@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 export { useTerminalStore } from "./terminalStore";
 export { useUIStore } from "./uiStore";
-export { useRecapStore } from "./recapStore";
+import { useRecapStore } from "./recapStore";
+export { useRecapStore };
 import { Trade, TradeFilter, MT5Account, User, Theme, DEFAULT_FILTER, RecapSettings } from "@/types";
 import { calcStats, applyFilter, toWIB, detectSession } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete, buildWsUrl, getToken } from "@/lib/api";
@@ -282,7 +283,8 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
           set({ trades: updated });
         } else if (type === "new_trade") {
-          const { trades, isConnected } = get();
+          const { trades } = get();
+          const recapSettings = useRecapStore.getState().settings;
           const id = msg.trade.id;
           const hydrated = hydrateTrade(msg.trade);
           
@@ -291,8 +293,8 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
             // New trade
             set({ trades: [hydrated, ...trades] });
             
-            // IF trade is CLOSED and we are already connected, push to recap queue
-            if (hydrated.status === 'closed' && isConnected) {
+            // IF trade is CLOSED and recap is enabled, push to recap queue
+            if (hydrated.status === 'closed' && recapSettings.enabled) {
               set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
             }
           } else {
@@ -302,8 +304,8 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
             updated[existingIdx] = hydrated;
             set({ trades: updated });
 
-            // IF it just CLOSED, push to recap queue
-            if (previousStatus !== 'closed' && hydrated.status === 'closed' && isConnected) {
+            // IF it just CLOSED and recap is enabled, push to recap queue
+            if (previousStatus !== 'closed' && hydrated.status === 'closed' && recapSettings.enabled) {
               set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
             }
           }
@@ -625,6 +627,7 @@ export const useShareStore = create<ShareStore>()((set, get) => ({
 
 // ── Hydration helper ──────────────────────────────────────────────────────────
 function hydrateTrade(t: Trade): Trade {
+  const ticket = t.ticket || (t as any).id;
   const status = (typeof t.status === "string" ? t.status.toLowerCase() : "closed") as "closed" | "live" | "pending";
 
   // Ensure we have a valid openTimeWIB for calendar/journal sorting
@@ -645,6 +648,7 @@ function hydrateTrade(t: Trade): Trade {
       : 0);
   return {
     ...t,
+    ticket: ticket ? Number(ticket) : 0,
     status,
     openTimeWIB,
     closeTimeWIB,
