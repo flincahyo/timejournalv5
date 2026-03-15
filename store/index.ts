@@ -283,10 +283,11 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
           set({ trades: updated });
         } else if (type === "new_trade") {
-          const { trades } = get();
+          const { trades, recapQueue } = get();
           const recapSettings = useRecapStore.getState().settings;
-          const id = msg.trade.id;
-          const hydrated = hydrateTrade(msg.trade);
+          const rawTrade = msg.trade;
+          const hydrated = hydrateTrade(rawTrade);
+          const id = hydrated.id;
           
           const existingIdx = trades.findIndex((t) => t.id === id);
           if (existingIdx === -1) {
@@ -294,8 +295,11 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
             set({ trades: [hydrated, ...trades] });
             
             // IF trade is CLOSED and recap is enabled, push to recap queue
-            if (hydrated.status === 'closed' && recapSettings.enabled) {
-              set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+            if (hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
+              // Avoid duplicates in queue
+              if (!recapQueue.find(q => q.id === id)) {
+                set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+              }
             }
           } else {
             // Update existing trade
@@ -305,8 +309,11 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
             set({ trades: updated });
 
             // IF it just CLOSED and recap is enabled, push to recap queue
-            if (previousStatus !== 'closed' && hydrated.status === 'closed' && recapSettings.enabled) {
-              set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+            if (previousStatus !== 'closed' && hydrated.status === 'closed' && (recapSettings?.enabled ?? true)) {
+               // Avoid duplicates in queue
+               if (!recapQueue.find(q => q.id === id)) {
+                 set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+               }
             }
           }
         } else if (type === "connected") {

@@ -1,12 +1,13 @@
 "use client";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMT5Store, useRecapStore, useJournalStore } from "@/store";
 import { Trade } from "@/types";
-import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
-import { X, Check, Save, MessageSquare, Heart, Zap, AlertTriangle, Play, Activity } from "lucide-react";
+import { fmtUSD, fmtPips } from "@/lib/utils";
+import { Save, MessageSquare, Zap, Activity } from "lucide-react";
 import confetti from "canvas-confetti";
 import { apiPatch } from "@/lib/api";
+import { createPortal } from "react-dom";
 
 export default function TradeRecapModal() {
     const { recapQueue, removeFromRecapQueue } = useMT5Store();
@@ -18,16 +19,22 @@ export default function TradeRecapModal() {
     const [selectedEmotion, setSelectedEmotion] = useState("");
     const [note, setNote] = useState("");
     const [isSaving, setIsSaving] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+        return () => { document.body.style.overflow = ""; };
+    }, []);
 
     // Get the next trade in queue
     useEffect(() => {
         if (!currentTrade && recapQueue.length > 0) {
             const next = recapQueue[0];
             setCurrentTrade(next);
-            // Pre-fill if exists (unlikely for new closed trades but good for safety)
             setSelectedSetup(next.setup || "");
             setSelectedEmotion(next.emotion || "");
             setNote(next.note || "");
+            document.body.style.overflow = "hidden";
             
             // Trigger feedback
             if (next.pnl > 0) {
@@ -41,39 +48,31 @@ export default function TradeRecapModal() {
             } else {
                 playAudio(settings.loss_sound);
             }
+        } else if (!recapQueue.length) {
+            document.body.style.overflow = "";
         }
     }, [recapQueue, currentTrade, settings]);
 
     const playAudio = (soundUrl: string) => {
-        if (soundUrl === 'default_profit') {
-           // play default profit sound logic if any, or just return
-           return;
-        }
-        if (soundUrl === 'default_loss') {
-           return;
-        }
+        if (!soundUrl || soundUrl === 'default_profit' || soundUrl === 'default_loss') return;
         const audio = new Audio(soundUrl);
         audio.play().catch(e => console.log("Audio play failed:", e));
     };
 
     const handleSave = async () => {
-        if (!currentTrade) return;
+        if (!currentTrade || !selectedSetup || !selectedEmotion) return;
         setIsSaving(true);
         try {
-            await apiPatch(`/api/trades/${currentTrade.ticket}`, {
+            await apiPatch(`/api/trades/${currentTrade.ticket || (currentTrade as any).id}`, {
                 setup: selectedSetup,
                 emotion: selectedEmotion,
                 notes: note
             });
-            
-            // Update successful
             removeFromRecapQueue(currentTrade.id);
             setCurrentTrade(null);
             setSelectedSetup("");
             setSelectedEmotion("");
             setNote("");
-            
-            // Refresh journal if needed
             fetchJournal();
         } catch (err) {
             console.error("Failed to save recap:", err);
@@ -82,19 +81,14 @@ export default function TradeRecapModal() {
         }
     };
 
-    const handleSkip = () => {
-        if (!currentTrade) return;
-        removeFromRecapQueue(currentTrade.id);
-        setCurrentTrade(null);
-    };
-
-    if (!currentTrade) return null;
+    if (!currentTrade || !mounted) return null;
 
     const isProfit = currentTrade.pnl > 0;
+    const canSave = selectedSetup && selectedEmotion;
 
-    return (
+    return createPortal(
         <AnimatePresence>
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70">
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 transition-all duration-300">
                 <motion.div 
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -103,9 +97,7 @@ export default function TradeRecapModal() {
                 >
                     {/* Header with Result */}
                     <div className={`p-8 pb-6 relative overflow-hidden ${isProfit ? 'bg-green/5' : 'bg-red/5'}`}>
-                        {/* Glow effect */}
                         <div className={`absolute -top-24 -left-24 w-64 h-64 rounded-full blur-[100px] opacity-20 ${isProfit ? 'bg-green' : 'bg-red'}`} />
-                        
                         <div className="flex justify-between items-start relative z-10">
                             <div>
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text3 opacity-60">Trade Result</span>
@@ -123,18 +115,10 @@ export default function TradeRecapModal() {
                                     </div>
                                 </div>
                             </div>
-                            <button 
-                                onClick={handleSkip}
-                                className="p-2 rounded-full bg-surface2 text-text3 hover:text-text transition-colors"
-                            >
-                                <X size={20} />
-                            </button>
                         </div>
                     </div>
 
-                    {/* Content Section */}
                     <div className="p-8 pt-2 flex flex-col gap-8">
-                        {/* Setup Quality */}
                         <div>
                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text3 opacity-60 block mb-4">Setup Quality</label>
                             <div className="flex flex-wrap gap-2">
@@ -154,7 +138,6 @@ export default function TradeRecapModal() {
                             </div>
                         </div>
 
-                        {/* Emotion Choice */}
                         <div>
                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text3 opacity-60 block mb-4">How did you feel?</label>
                             <div className="flex flex-wrap gap-2">
@@ -174,9 +157,8 @@ export default function TradeRecapModal() {
                             </div>
                         </div>
 
-                        {/* Journal Notes */}
                         <div className="flex flex-col gap-3">
-                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text3 opacity-60 block">Journal Entry</label>
+                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-text3 opacity-60 block">Journal Entry (Optional)</label>
                              <div className="relative">
                                  <textarea
                                     value={note}
@@ -188,30 +170,24 @@ export default function TradeRecapModal() {
                              </div>
                         </div>
 
-                        {/* Actions */}
                         <div className="flex gap-4">
                             <button
-                                onClick={handleSkip}
-                                className="flex-1 bg-surface2 text-text2 px-6 py-5 rounded-[1.25rem] text-[13px] font-black uppercase tracking-widest hover:bg-surface3 transition-all active:scale-95"
-                            >
-                                Skip
-                            </button>
-                            <button
                                 onClick={handleSave}
-                                disabled={isSaving}
-                                className="flex-[2] bg-accent text-white px-6 py-5 rounded-[1.25rem] text-[13px] font-black uppercase tracking-widest shadow-xl shadow-accent/20 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                                disabled={isSaving || !canSave}
+                                className="w-full bg-accent text-white px-6 py-5 rounded-[1.25rem] text-[13px] font-black uppercase tracking-widest shadow-xl shadow-accent/20 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
                             >
                                 {isSaving ? (
                                     <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                                 ) : (
                                     <Save size={18} strokeWidth={2.5} />
                                 )}
-                                Log Trade Recap
+                                {canSave ? "Log Trade Recap" : "Select Setup & Emotion"}
                             </button>
                         </div>
                     </div>
                 </motion.div>
             </div>
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }
