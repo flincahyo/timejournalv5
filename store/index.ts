@@ -6,7 +6,7 @@ import { useRecapStore } from "./recapStore";
 export { useRecapStore };
 import { Trade, TradeFilter, MT5Account, User, Theme, DEFAULT_FILTER, RecapSettings } from "@/types";
 import { calcStats, applyFilter, toWIB, detectSession } from "@/lib/utils";
-import { apiGet, apiPost, apiPut, apiDelete, buildWsUrl, getToken } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete, buildWsUrl, getToken, apiPostFormData } from "@/lib/api";
 
 // ── Auth Store ────────────────────────────────────────────────────────────────
 interface AuthStore {
@@ -35,17 +35,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     const formData = new FormData();
     formData.append("file", file);
 
-    // apiPost might need adjustment for FormData, but many fetch wrappers handle it.
-    // If apiPost doesn't, we might need a raw fetch or specialized helper.
-    // Let's assume apiPost handles FormData or add a new helper.
-    const token = getToken();
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/upload-avatar`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}` },
-      body: formData,
-    });
-    if (!res.ok) throw new Error("Gagal mengunggah foto");
-    const data = await res.json();
+    const data = await apiPostFormData<{ url: string }>("/api/auth/upload-avatar", formData);
     set({ user: { ...get().user!, image: data.url } });
     return data.url;
   },

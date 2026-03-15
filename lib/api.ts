@@ -92,3 +92,16 @@ export function buildWsUrl(path: string): string {
     const base = BACKEND_URL.replace(/^http/, "ws");
     return `${base}${path}${token ? `?token=${token}` : ""}`;
 }
+
+export async function apiPostFormData<T>(path: string, formData: FormData): Promise<T> {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${BACKEND_URL}${path}`, {
+        method: "POST",
+        headers: headers, // Do not set Content-Type manually for FormData
+        body: formData,
+    });
+    return handleResponse<T>(res);
+}

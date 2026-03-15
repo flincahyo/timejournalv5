@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { RecapSettings, RecapSettingsUpdate } from "@/types";
-import { apiGet, apiPatch } from "@/lib/api";
+import { apiGet, apiPatch, apiPostFormData } from "@/lib/api";
 
 interface RecapStore {
     settings: RecapSettings;
@@ -52,14 +52,7 @@ export const useRecapStore = create<RecapStore>()(
                 const formData = new FormData();
                 formData.append("file", file);
                 
-                const token = localStorage.getItem('uj_token') || localStorage.getItem('token');
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/upload-sound`, {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${token}` },
-                    body: formData,
-                });
-                if (!res.ok) throw new Error("Gagal mengunggah suara");
-                const data = await res.json();
+                const data = await apiPostFormData<{ url: string }>("/api/auth/upload-sound", formData);
                 return data.url;
             },
             clear: () => set({ settings: DEFAULT_SETTINGS }),
