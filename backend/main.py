@@ -220,6 +220,13 @@ async def on_mt5_message(user_id: str, msg: dict):
                         t["session"] = detect_session(t.get("openTime") or t.get("time"))
                     db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
                     await db.commit()
+                else:
+                    # UPDATE existing trade (e.g. when it closes)
+                    if "session" not in t:
+                         t["session"] = existing.data.get("session") or detect_session(t.get("openTime") or t.get("time"))
+                    existing.data = t
+                    existing.synced_at = datetime.datetime.utcnow()
+                    await db.commit()
                     
                     # Expo Push
                     settings = await db.get(UserSettings, uid)

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useMT5Store, useJournalStore } from "@/store";
@@ -108,7 +108,7 @@ export default function EditTradeModal({ trade, onClose }: { trade: Trade; onClo
     const dynamicSetups = Array.from(new Set([...SETUPS_LIST, ...trades.map(t => t.setup).filter(Boolean)])).filter(s => s !== "MT5 Import");
 
     return createPortal(
-        <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center backdrop-blur-md transition-all duration-300" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/70 z-[99999] flex items-center justify-center transition-all duration-300" onClick={onClose}>
             <div className="fade-in bg-surface rounded-2xl p-8 w-[560px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-8">
                     <div className="text-base font-bold text-text">Edit Trade {trade.ticket !== 0 ? `#${trade.ticket}` : "(Manual)"}</div>

@@ -281,24 +281,30 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
 
           updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
           set({ trades: updated });
-          } else if (type === "new_trade") {
+        } else if (type === "new_trade") {
           const { trades, isConnected } = get();
           const id = msg.trade.id;
           const hydrated = hydrateTrade(msg.trade);
           
-          if (!trades.find((t) => t.id === id)) {
+          const existingIdx = trades.findIndex((t) => t.id === id);
+          if (existingIdx === -1) {
+            // New trade
             set({ trades: [hydrated, ...trades] });
             
-            // IF trade is CLOSED and we are already connected (not initial load), push to recap queue
+            // IF trade is CLOSED and we are already connected, push to recap queue
             if (hydrated.status === 'closed' && isConnected) {
-              // Check if recap is enabled in settings
-              try {
-                // Dynamically import/access store to avoid circular or early access issues if any
-                // But since they are in the same file or exported, it's fine.
-                // We'll use get() from useRecapStore inside the component or here.
-                // For now just push it, the Modal will decide whether to show based on enabled flag.
-                set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
-              } catch (e) {}
+              set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
+            }
+          } else {
+            // Update existing trade
+            const updated = [...trades];
+            const previousStatus = updated[existingIdx].status;
+            updated[existingIdx] = hydrated;
+            set({ trades: updated });
+
+            // IF it just CLOSED, push to recap queue
+            if (previousStatus !== 'closed' && hydrated.status === 'closed' && isConnected) {
+              set(s => ({ recapQueue: [...s.recapQueue, hydrated] }));
             }
           }
         } else if (type === "connected") {
