@@ -10,7 +10,7 @@ import { apiPatch } from "@/lib/api";
 import { createPortal } from "react-dom";
 
 export default function TradeRecapModal() {
-    const { recapQueue, removeFromRecapQueue } = useMT5Store();
+    const { recapQueue, removeFromRecapQueue, updateTrade } = useMT5Store();
     const { settings } = useRecapStore();
     const { fetchJournal } = useJournalStore();
     
@@ -68,6 +68,14 @@ export default function TradeRecapModal() {
                 emotion: selectedEmotion,
                 notes: note
             });
+            
+            // Synchronize with local store immediately
+            updateTrade(currentTrade.id, {
+                setup: selectedSetup,
+                emotion: selectedEmotion,
+                note: note
+            });
+
             removeFromRecapQueue(currentTrade.id);
             setCurrentTrade(null);
             setSelectedSetup("");
