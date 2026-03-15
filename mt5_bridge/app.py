@@ -61,11 +61,15 @@ HEADERS = {"x-bridge-key": BRIDGE_API_KEY, "Content-Type": "application/json"}
 
 #  Local state 
 # Tracks which users have had their full history fetched this session.
-# { user_id: { "login": int, "history_fetched": bool } }
+# { user_id: { "login": int, "history_fetched": bool, "symbols_pushed": bool } }
 _session_cache: dict = {}
 
 # Currently logged-in MT5 account login number (None = not logged in)
 _current_login: int | None = None
+
+# Tracks live tickets to detect closures per user
+# { user_id: set(ticket_ids) }
+_live_tracking: dict = {}
 
 
 #  MT5 helpers 
@@ -525,6 +529,28 @@ async def _cycle(client: httpx.AsyncClient):
                     "type": "recent_trades",
                     "trades": history,
                 })
+
+        # Detect Closures (Explicitly send new_trade for recap)
+        prev_live = _live_tracking.get(user_id, set())
+        curr_live = {t["id"] for t in (positions or [])}
+        _live_tracking[user_id] = curr_live
+        
+        # Tickets that WERE live but are NOT anymore -> potentially closed
+        closed_tickets = prev_live - curr_live
+        if closed_tickets:
+            log.info(f"[{user_id}] Detected {len(closed_tickets)} closed/missing positions: {closed_tickets}")
+            # Search history for these specific tickets
+            for tid in closed_tickets:
+                # Find in the 'history' we just fetched or re-fetch specifically?
+                # Usually _fetch_history(full=False) covers last 24h, so it's likely there.
+                match = next((t for t in history if t["id"] == tid), None)
+                if match:
+                    log.info(f"[{user_id}] Sending explicit recap trigger for ticket {tid}")
+                    await _push(client, {
+                        "user_id": user_id,
+                        "type": "new_trade",
+                        "trade": match
+                    })
 
         # Always push live positions and latest account info
         if positions is not None:

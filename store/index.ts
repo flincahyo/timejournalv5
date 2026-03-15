@@ -270,14 +270,34 @@ export const useMT5Store = create<MT5Store>()((set, get) => ({
           set({ trades: incoming });
         } else if (type === "recent_trades") {
           const incoming = (msg.trades || []).map(hydrateTrade);
-          const { trades: existing } = get();
+          const { trades: existing, recapQueue } = get();
+          const recapSettings = useRecapStore.getState().settings;
 
           // Merge incoming into existing by ID
           const updated = [...existing];
           incoming.forEach(t => {
             const idx = updated.findIndex(m => m.id === t.id);
-            if (idx > -1) updated[idx] = t;
-            else updated.push(t);
+            const tradeId = String(t.id);
+            
+            if (idx > -1) {
+              const previousStatus = updated[idx].status;
+              updated[idx] = t;
+              
+              // Transition detection for batch update
+              if (previousStatus !== 'closed' && t.status === 'closed' && (recapSettings?.enabled ?? true)) {
+                if (!recapQueue.some(q => String(q.id) === tradeId)) {
+                   set(s => ({ recapQueue: [...s.recapQueue, t] }));
+                }
+              }
+            } else {
+              updated.push(t);
+              // New closed trade detection
+              if (t.status === 'closed' && (recapSettings?.enabled ?? true)) {
+                if (!recapQueue.some(q => String(q.id) === tradeId)) {
+                   set(s => ({ recapQueue: [...s.recapQueue, t] }));
+                }
+              }
+            }
           });
 
           updated.sort((a, b) => new Date(b.openTime).getTime() - new Date(a.openTime).getTime());
