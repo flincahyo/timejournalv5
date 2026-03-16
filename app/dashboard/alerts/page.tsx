@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useAlertStore, AnyAlert, CandleAlert, PriceAlert } from "@/store";
@@ -230,7 +230,7 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="p-4 md:p-7 fade-in h-[calc(100vh-60px)] overflow-y-auto pb-24 md:pb-[30px] max-w-8xl mx-auto">
+    <div className="p-4 md:p-7 fade-in h-[calc(100vh-60px)] overflow-y-auto pb-24 md:pb-[30px] max-w-7xl mx-auto">
       <div className="mb-4 md:mb-8 shrink-0">
         <h1 className="text-2xl font-extrabold text-text tracking-[-0.8px] leading-tight mb-1">
           Market Alerts

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useMemo, useState } from "react";
 import { useFilteredTrades, useMT5Store } from "@/store";
 import { fmtUSD, fmtPips } from "@/lib/utils";
@@ -53,7 +53,7 @@ export default function TradesPage() {
   const wins = closed.filter(t => t.pnl > 0).length;
 
   return (
-    <div className="fade-in flex flex-col h-[calc(100vh-var(--topbar-h))] p-6 pb-6 overflow-hidden">
+    <div className="fade-in flex flex-col h-[calc(100vh-var(--topbar-h))] p-4 md:p-7 pb-6 max-w-7xl mx-auto overflow-hidden">
       {/* Header */}
       <div className="card shrink-0 p-4 mb-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">

@@ -8,8 +8,9 @@ import FilterModal from "@/components/filters/FilterModal";
 import DateRangeModal from "@/components/filters/DateRangeModal";
 import AddTradeModal from "@/components/modals/AddTradeModal";
 import AIAnalystContent from "@/components/modals/AIAnalystContent";
-import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import MobileTabBar from "@/components/layout/MobileTabBar";
 import AccountModal from "@/components/modals/AccountModal";
 import ShareModal from "@/components/modals/ShareModal";
@@ -88,101 +89,101 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <DataLoader>
-      <div className="flex flex-col h-screen overflow-hidden bg-bg">
-        {/* Global Top Header */}
-        <Topbar />
+      <SidebarProvider defaultOpen={true}>
+        <div className="flex flex-col h-screen overflow-hidden bg-bg w-full">
+          {/* Global Top Header */}
+          <Topbar />
 
-        <div className="flex flex-1 overflow-hidden relative">
-          {/* Contextual Sidebar - fixed below Topbar */}
-          <div className="hidden md:block shrink-0">
-            <Sidebar />
+          <div className="flex flex-1 overflow-hidden relative">
+            {/* Contextual Sidebar - fixed below Topbar */}
+            <AppSidebar />
+
+            {/* Main Content Area */}
+            <SidebarInset className="flex-1 overflow-y-auto overflow-x-hidden md:pb-0 pb-[calc(4rem+env(safe-area-inset-bottom))] relative bg-transparent">
+              {children}
+            </SidebarInset>
           </div>
 
-          {/* Main Content Area */}
-          <main className="flex-1 overflow-y-auto overflow-x-hidden md:pb-0 pb-[calc(4rem+env(safe-area-inset-bottom))] relative">
-            {children}
-          </main>
+          {/* Mobile bottom tab bar */}
+          <MobileTabBar />
         </div>
 
-        {/* Mobile bottom tab bar */}
-        <MobileTabBar />
-      </div>
+        <SideDrawer
+          isOpen={activeDrawer === 'account'}
+          onClose={closeDrawer}
+          title="Account Settings"
+          subtitle="Manage your profile and security"
+          noPadding
+        >
+          <AccountModal isOpen={activeDrawer === 'account'} onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'account'}
-        onClose={closeDrawer}
-        title="Account Settings"
-        subtitle="Manage your profile and security"
-        noPadding
-      >
-        <AccountModal isOpen={activeDrawer === 'account'} onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'add_trade'}
+          onClose={closeDrawer}
+          title="Add Trade Manual"
+          subtitle="Log a new trade record manually"
+        >
+          <AddTradeModal onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'add_trade'}
-        onClose={closeDrawer}
-        title="Add Trade Manual"
-        subtitle="Log a new trade record manually"
-      >
-        <AddTradeModal onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'mt5_connect'}
+          onClose={closeDrawer}
+          title="Broker Connection"
+          subtitle="Sync with MetaTrader 5"
+        >
+          <MT5ConnectModal onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'mt5_connect'}
-        onClose={closeDrawer}
-        title="Broker Connection"
-        subtitle="Sync with MetaTrader 5"
-      >
-        <MT5ConnectModal onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'filter'}
+          onClose={closeDrawer}
+          title="Filter Trades"
+          subtitle="Refine your trade list"
+        >
+          <FilterModal trades={all} onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'filter'}
-        onClose={closeDrawer}
-        title="Filter Trades"
-        subtitle="Refine your trade list"
-      >
-        <FilterModal trades={all} onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'date_range'}
+          onClose={closeDrawer}
+          title="Date Range"
+          subtitle="Select a specific time period"
+        >
+          <DateRangeModal onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'date_range'}
-        onClose={closeDrawer}
-        title="Date Range"
-        subtitle="Select a specific time period"
-      >
-        <DateRangeModal onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'ai_analyst'}
+          onClose={closeDrawer}
+          title="AI Market Analyst"
+          subtitle="Objective performance insights"
+        >
+          <AIAnalystContent stats={stats} closedTrades={all.filter(t => t.status === 'closed')} onClose={closeDrawer} />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'ai_analyst'}
-        onClose={closeDrawer}
-        title="AI Market Analyst"
-        subtitle="Objective performance insights"
-      >
-        <AIAnalystContent stats={stats} closedTrades={all.filter(t => t.status === 'closed')} onClose={closeDrawer} />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'share'}
+          onClose={closeDrawer}
+          title="Share Portfolio"
+          subtitle="Manage public sharing links"
+          noPadding
+        >
+          <ShareModal />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'share'}
-        onClose={closeDrawer}
-        title="Share Portfolio"
-        subtitle="Manage public sharing links"
-        noPadding
-      >
-        <ShareModal />
-      </SideDrawer>
+        <SideDrawer
+          isOpen={activeDrawer === 'recap_settings'}
+          onClose={closeDrawer}
+          title="Trade Recap Settings"
+          subtitle="Customize your post-trade experience"
+        >
+          <RecapSettingsDrawer />
+        </SideDrawer>
 
-      <SideDrawer
-        isOpen={activeDrawer === 'recap_settings'}
-        onClose={closeDrawer}
-        title="Trade Recap Settings"
-        subtitle="Customize your post-trade experience"
-      >
-        <RecapSettingsDrawer />
-      </SideDrawer>
-
-      <TradeRecapModal />
+        <TradeRecapModal />
+      </SidebarProvider>
     </DataLoader>
   );
 }

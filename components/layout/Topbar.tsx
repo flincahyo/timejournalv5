@@ -9,6 +9,7 @@ import AddTradeModal from "@/components/modals/AddTradeModal";
 import ShareModal from "@/components/modals/ShareModal";
 import { BrandLogo } from "./BrandLogo";
 import { AvatarIcon } from "@/components/ui/AvatarIcon";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 
 
@@ -36,13 +37,16 @@ export default function Topbar() {
 
   return (
     <>
-      <header className="h-[var(--topbar-h)] bg-surface/80 backdrop-blur-md sticky top-0 border-b border-border flex items-center px-4 md:px-6 gap-8 shrink-0 z-[60]">
+      <header className="h-[var(--topbar-h)] bg-surface/80 backdrop-blur-md sticky top-0 border-none flex items-center px-4 md:px-6 gap-8 shrink-0 z-[60]">
         {/* Logo Section */}
-        <div
-          className="flex items-center gap-3 cursor-pointer shrink-0"
-          onClick={() => router.push('/dashboard')}
-        >
-          <BrandLogo />
+        <div className="flex items-center gap-3 shrink-0">
+          <SidebarTrigger className="-ml-2 h-9 w-9 text-text3 hover:text-accent hover:bg-accent/10 transition-colors" />
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={() => router.push('/dashboard')}
+          >
+            <BrandLogo />
+          </div>
         </div>
 
         {/* Main Modules Navigation */}
@@ -76,20 +80,20 @@ export default function Topbar() {
           {pathname === '/dashboard/terminal' && isConnected && account && (
             <div className="hidden xl:flex items-center gap-5 mr-3 animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="flex flex-col items-end">
-                <span className="text-[9px] font-bold text-text3 uppercase tracking-[0.12em] opacity-60">Balance</span>
-                <span className="text-[14px] font-bold text-text tabular-nums tracking-tight">
+                <span className="text-[9px] font-semibold text-text3 uppercase tracking-[0.12em] opacity-60">Balance</span>
+                <span className="text-[14px] font-semibold text-text tabular-nums tracking-tight">
                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: account.currency }).format(account.balance)}
                 </span>
               </div>
               <div className="w-[1px] h-5 bg-border opacity-40" />
               <div className="flex flex-col items-end">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-full ${account.profit >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
+                  <span className={`text-[8.5px] font-semibold px-1.5 py-0.5 rounded-full ${account.profit >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
                     {account.profit >= 0 ? "+" : ""}{((account.profit / (account.balance - account.profit)) * 100).toFixed(2)}%
                   </span>
-                  <span className="text-[9px] font-bold text-text3 uppercase tracking-[0.12em] opacity-60">Equity</span>
+                  <span className="text-[9px] font-semibold text-text3 uppercase tracking-[0.12em] opacity-60">Equity</span>
                 </div>
-                <span className={`text-[14px] font-bold tabular-nums tracking-tight ${account.profit >= 0 ? "text-green" : "text-red"}`}>
+                <span className={`text-[14px] font-semibold tabular-nums tracking-tight ${account.profit >= 0 ? "text-green" : "text-red"}`}>
                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: account.currency }).format(account.equity)}
                 </span>
               </div>
@@ -101,7 +105,7 @@ export default function Topbar() {
             <div className="flex items-center gap-2 mr-2">
               <button
                 onClick={() => openDrawer('add_trade')}
-                className="group flex items-center bg-accent text-[#0b0e11] h-9 rounded-lg text-[13px] font-bold hover:opacity-90 active:scale-95 transition-all duration-500 shadow-sm overflow-hidden"
+                className="group flex items-center bg-accent text-[#0b0e11] h-9 rounded-lg text-[13px] font-semibold hover:opacity-90 active:scale-95 transition-all duration-500 shadow-sm overflow-hidden"
                 title="Add Trade"
               >
                 <div className="flex items-center justify-center w-9 h-9 shrink-0">
@@ -129,7 +133,7 @@ export default function Topbar() {
               >
                 {IcFilter}
                 {filterCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent text-[#0b0e11] text-[9px] font-black flex items-center justify-center border-2 border-bg">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent text-[#0b0e11] text-[9px] font-bold flex items-center justify-center border-2 border-bg">
                     {filterCount}
                   </span>
                 )}
@@ -147,12 +151,12 @@ export default function Topbar() {
           >
             <div className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? "bg-green shadow-[0_0_8px_rgba(14,203,129,0.5)]" : "bg-text3 opacity-40"}`} />
             <div className="flex items-center">
-              <span className="text-[13px] font-mono font-bold whitespace-nowrap">
+              <span className="text-[13px] font-mono font-semibold whitespace-nowrap">
                 {isConnected ? "Connected" : "Connect MT5"}
               </span>
               {isConnected && account && (
                 <div className="max-w-0 group-hover:max-w-[120px] transition-all duration-500 ease-in-out overflow-hidden">
-                  <span className="text-[13px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300 ml-2 whitespace-nowrap border-l border-green/20 pl-2">
+                  <span className="text-[13px] font-mono font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300 ml-2 whitespace-nowrap border-l border-green/20 pl-2">
                     #{account.login}
                   </span>
                 </div>

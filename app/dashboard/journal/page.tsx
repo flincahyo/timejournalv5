@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useMemo, useState } from "react";
 import { useFilteredTrades, useFilterStore, useJournalStore } from "@/store";
 import { fmtUSD } from "@/lib/utils";
@@ -94,7 +94,7 @@ export default function JournalPage() {
   }, [closed]);
 
   return (
-    <div className="fade-in p-4 md:p-7 pb-10 max-w-[1240px] mx-auto flex flex-col md:h-auto overflow-visible">
+    <div className="fade-in p-4 md:p-7 pb-10 max-w-7xl mx-auto flex flex-col md:h-auto overflow-visible">
       {/* Header & Filters */}
       <h1 className="text-2xl font-extrabold text-text tracking-[-0.8px] leading-tight mb-5 shrink-0">Journal</h1>
 

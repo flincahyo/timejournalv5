@@ -243,7 +243,7 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="p-4 px-5 md:p-7 pb-24 md:pb-10 max-w-8xl mx-auto">
+    <div className="p-4 px-2 md:p-6 pb-24 md:pb-10 w-full max-w-[1600px] mx-auto">
 
       {/* â”€â”€ Page header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="au mb-6.5">

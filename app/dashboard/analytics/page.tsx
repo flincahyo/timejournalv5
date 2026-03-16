@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import React, { useMemo, useState } from "react";
 import { useFilteredTrades } from "@/store";
 import { fmtUSD, fmtPips, formatDuration } from "@/lib/utils";
@@ -106,7 +106,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="fade-in p-6 lg:p-8 flex flex-col gap-10 max-w-[1600px] mx-auto pb-32">
+    <div className="fade-in p-4 md:p-7 flex flex-col gap-10 max-w-7xl mx-auto pb-32">
 
       {/* 1. Hero Performance Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

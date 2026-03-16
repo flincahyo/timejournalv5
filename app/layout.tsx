@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Montserrat, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import NextTopLoader from "nextjs-toploader";
 import { NewsWatcher } from "@/components/layout/NewsWatcher";
@@ -18,15 +18,14 @@ export const metadata: Metadata = {
   description: "Professional forex trading journal with live MT5 sync",
 };
 
-const montserrat = Montserrat({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
-  variable: "--font-montserrat",
+  variable: "--font-inter",
 });
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={montserrat.variable} suppressHydrationWarning>
+    <html lang="id" className={inter.variable} suppressHydrationWarning>
       <head>
         {/* Anti-flash: apply theme before first paint */}
         <script dangerouslySetInnerHTML={{

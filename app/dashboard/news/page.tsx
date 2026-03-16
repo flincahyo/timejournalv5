@@ -176,7 +176,7 @@ export default function NativeNewsPage() {
 
     return (
         <>
-            <div className="fade-in p-4 md:p-7 md:pt-[30px] md:pr-[30px] md:pb-[30px] md:pl-[30px] h-auto lg:h-[calc(100vh-60px)] flex flex-col max-w-none gap-4 lg:gap-0 pb-20">
+            <div className="fade-in p-4 md:p-7 h-auto lg:h-[calc(100vh-60px)] flex flex-col max-w-7xl mx-auto gap-4 lg:gap-0 pb-20">
                 <div className="flex flex-col md:flex-row md:items-start justify-between mb-2 lg:mb-6 shrink-0 gap-3">
                     <div>
                         <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3 mb-1">

@@ -113,7 +113,7 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="fade-in flex flex-col gap-4 p-4 md:p-7 pb-24 md:pb-10 max-w-8xl mx-auto">
+    <div className="fade-in flex flex-col gap-4 p-4 md:p-7 pb-24 md:pb-10 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-1">
         <div className="relative w-full md:w-auto flex justify-between md:block items-center">
           <button
