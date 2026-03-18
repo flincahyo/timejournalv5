@@ -17,7 +17,6 @@ COPY . .
 # NEXT_PUBLIC_BACKEND_URL will be the nginx proxy path so it can be relative
 ARG NEXT_PUBLIC_BACKEND_URL=http://backend:8000
 ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN npm run build
 
