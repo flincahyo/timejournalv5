@@ -121,38 +121,88 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
         print(f"DEBUG PUSH: Error sending push notification: {e}")
 
 
+async def sync_trade_to_journal(user_id: str, trade_data: dict, db: AsyncSession):
+    """Sync trade setup and emotion to journal tags for that day."""
+    from database import JournalTag, DailyTag
+    
+    setup = trade_data.get("setup")
+    emotion = trade_data.get("emotion")
+    timestamp = trade_data.get("openTime") or trade_data.get("time")
+    if not timestamp or (not setup and not emotion):
+        return
+        
+    day = timestamp.split('T')[0]
+    tags_to_add = [t for t in [setup, emotion] if t and t.strip()]
+    print(f"DEBUG SYNC: User {user_id}, Day {day}, Tags {tags_to_add}")
+    
+    for tag_name in tags_to_add:
+        tag_name = tag_name.strip()
+        
+        # 1. Ensure it exists in master JournalTag list
+        res = await db.execute(select(JournalTag).where(JournalTag.user_id == user_id, JournalTag.name == tag_name))
+        if not res.scalar_one_or_none():
+            print(f"DEBUG SYNC: Adding to master JournalTag: {tag_name}")
+            db.add(JournalTag(user_id=user_id, name=tag_name))
+            
+        # 2. Ensure it exists in DailyTag for that day
+        res_d = await db.execute(select(DailyTag).where(DailyTag.user_id == user_id, DailyTag.day == day, DailyTag.tag == tag_name))
+        if not res_d.scalar_one_or_none():
+            print(f"DEBUG SYNC: Adding to DailyTag: {tag_name} for {day}")
+            db.add(DailyTag(user_id=user_id, day=day, tag=tag_name))
+    
+    await db.flush()
+
+
 def detect_session(dt_val):
     """Detects Forex trading session based on timestamp."""
     if not dt_val:
         return "Unknown"
     try:
-        # Handle WIB string: "2024-05-15 19:30:00"
-        if isinstance(dt_val, str) and len(dt_val) >= 19 and " " in dt_val:
-            dt_naive = datetime.datetime.strptime(dt_val[:19], "%Y-%m-%d %H:%M:%S")
-            dt_utc = pytz.timezone("Asia/Jakarta").localize(dt_naive).astimezone(pytz.UTC)
+        dt_utc = None
+        # Handle WIB string or ISO string
+        if isinstance(dt_val, str):
+            dt_str = dt_val.strip()
+            # Replace common non-ISO separators
+            dt_str = dt_str.replace(" ", "T").replace("/", "-").replace(".", "-")
+            
+            if dt_str.endswith("Z"):
+                dt_utc = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00")).astimezone(pytz.UTC)
+            elif "+" in dt_str or ("-" in dt_str[10:] and len(dt_str) > 10): # Has offset
+                dt_utc = datetime.datetime.fromisoformat(dt_str).astimezone(pytz.UTC)
+            elif len(dt_str) >= 19:
+                dt_naive = datetime.datetime.fromisoformat(dt_str[:19])
+                # Default to WIB if no offset (worker convention), otherwise fallback to UTC
+                dt_utc = pytz.timezone("Asia/Jakarta").localize(dt_naive).astimezone(pytz.UTC)
+            else:
+                dt_utc = datetime.datetime.fromisoformat(dt_str).astimezone(pytz.UTC)
         elif isinstance(dt_val, (int, float)):
             dt_utc = datetime.datetime.fromtimestamp(dt_val, tz=pytz.UTC)
+        elif isinstance(dt_val, datetime.datetime):
+            if dt_val.tzinfo is None:
+                dt_utc = pytz.timezone("Asia/Jakarta").localize(dt_val).astimezone(pytz.UTC)
+            else:
+                dt_utc = dt_val.astimezone(pytz.UTC)
         else:
-            dt_utc = datetime.datetime.fromisoformat(dt_val.replace("Z", "+00:00")).astimezone(pytz.UTC)
-            
-        london_tz = pytz.timezone("Europe/London")
-        ny_tz = pytz.timezone("America/New_York")
+            return "Unknown"
+
+        # Session Hours based on user screenshot (WIB)
+        # Convert UTC hour to WIB hour (Jakarta Time)
+        wib_h = (dt_utc.hour + 7) % 24
         
-        dt_london = dt_utc.astimezone(london_tz)
-        dt_ny = dt_utc.astimezone(ny_tz)
+        l_open = 14 <= wib_h < 24
+        ny_open = (19 <= wib_h < 24) or (0 <= wib_h < 5)
+        tk_open = 2 <= wib_h < 9
+        s_open = 4 <= wib_h < 13
         
-        l_h = dt_london.hour
-        ny_h = dt_ny.hour
-        
-        l_open = 8 <= l_h < 17
-        ny_open = 8 <= ny_h < 17
-        
-        if l_open and ny_open: return "Overlap (LDN+NY)"
+        if l_open and ny_open: return "Overlap LN+NY"
         if l_open: return "London"
         if ny_open: return "New York"
-        if 0 <= dt_utc.hour < 9: return "Tokyo"
-        return "Sydney"
-    except:
+        if tk_open: return "Tokyo"
+        if s_open: return "Sydney"
+        
+        return "Unknown"
+    except Exception as e:
+        print(f"DEBUG SESSION: Error detecting session for {dt_val}: {e}")
         return "Unknown"
 
 
@@ -188,18 +238,39 @@ async def on_mt5_message(user_id: str, msg: dict):
                 print(f"DEBUG MT5: Persisting {len(trades)} trades for account {aid} (user {uid})")
                 for t in trades:
                     ticket = str(t["id"])
-                    # Inject session if missing
-                    if "session" not in t:
-                        t["session"] = detect_session(t.get("openTime") or t.get("time"))
+                    # Calculate session first
+                    timestamp = t.get("openTime") or t.get("open_time") or t.get("time")
+                    detected_session = detect_session(timestamp)
                     
                     # Check if trade exists for THIS specific account
                     res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
                     existing = res_t.scalar_one_or_none()
                     if existing:
+                        # MERGE: Preserve manual fields from existing data
+                        old_data = existing.data or {}
+                        
+                        # Preserve an already correct session
+                        if old_data.get("session") and old_data.get("session") != "Unknown":
+                            t["session"] = old_data.get("session")
+                        else:
+                            t["session"] = detected_session
+                            
+                        for field in ["setup", "emotion", "notes", "note", "tags"]:
+                            if old_data.get(field) and not t.get(field):
+                                t[field] = old_data[field]
+                        
                         existing.data = t
                         existing.synced_at = datetime.datetime.utcnow()
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(existing, "data")
+                        
+                        # SYNC to journal tags
+                        await sync_trade_to_journal(uid, t, db)
                     else:
+                        t["session"] = detected_session
                         db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
+                        # NEW trade sync if it has setup/emotion (unlikely but possible)
+                        await sync_trade_to_journal(uid, t, db)
                 
                 # Update account sync time
                 target_acc = await db.get(MT5Account, aid)
@@ -216,16 +287,31 @@ async def on_mt5_message(user_id: str, msg: dict):
                 res_t = await db.execute(select(Trade).where(Trade.ticket == ticket, Trade.account_id == aid))
                 existing = res_t.scalar_one_or_none()
                 if not existing:
-                    if "session" not in t:
+                    if "session" not in t or t.get("session") == "Unknown":
                         t["session"] = detect_session(t.get("openTime") or t.get("time"))
                     db.add(Trade(ticket=ticket, account_id=aid, user_id=uid, data=t))
                     await db.commit()
                 else:
                     # UPDATE existing trade (e.g. when it closes)
-                    if "session" not in t:
-                         t["session"] = existing.data.get("session") or detect_session(t.get("openTime") or t.get("time"))
+                    old_data = existing.data or {}
+                    
+                    if old_data.get("session") and old_data.get("session") != "Unknown":
+                        t["session"] = old_data.get("session")
+                    elif "session" not in t or t.get("session") == "Unknown":
+                         t["session"] = detect_session(t.get("openTime") or t.get("time"))
+                    
+                    # MERGE: Preserve manual fields
+                    for field in ["setup", "emotion", "notes", "note", "tags"]:
+                        if old_data.get(field) and not t.get(field):
+                            t[field] = old_data[field]
+                    
                     existing.data = t
                     existing.synced_at = datetime.datetime.utcnow()
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(existing, "data")
+                    
+                    # SYNC to journal tags
+                    await sync_trade_to_journal(uid, t, db)
                     await db.commit()
                     
                     # Expo Push
@@ -566,10 +652,18 @@ async def update_trade_metadata(ticket: str, req: TradeMetadataUpdate, user: Use
     data = dict(trade.data)
     if req.setup is not None: data["setup"] = req.setup
     if req.emotion is not None: data["emotion"] = req.emotion
-    if req.notes is not None: data["note"] = req.notes # The field in Trade type is 'note'
+    if req.notes is not None: 
+        data["notes"] = req.notes
+        data["note"] = req.notes # Ensure compatibility with both field names
     if req.tags is not None: data["tags"] = req.tags
     
     trade.data = data
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(trade, "data")
+    
+    # SYNC to journal tags
+    await sync_trade_to_journal(user.id, data, db)
+    
     await db.commit()
     return {"ok": True, "trade": trade.data}
 
@@ -853,6 +947,44 @@ async def get_trades(
 
     trades = [r.data for r in result.scalars().all()]
     return {"trades": sorted(trades, key=lambda x: x.get("openTime", ""), reverse=True), "total": len(trades)}
+
+
+class TradeUpdateRequest(BaseModel):
+    setup: Optional[str] = None
+    emotion: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[str] = None
+
+@app.patch("/api/mt5/trades/{ticket}")
+async def update_trade(
+    ticket: str,
+    req: TradeUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Updates custom metadata (setup, emotion, notes) for an MT5 trade."""
+    result = await db.execute(select(Trade).where(Trade.user_id == user.id, Trade.ticket == ticket))
+    trade = result.scalar_one_or_none()
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    data = dict(trade.data)
+    if req.setup is not None: data["setup"] = req.setup
+    if req.emotion is not None: data["emotion"] = req.emotion
+    if req.notes is not None: 
+        data["notes"] = req.notes
+        data["note"] = req.notes # Sync field names
+    if req.tags is not None: data["tags"] = req.tags
+    
+    trade.data = data
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(trade, "data")
+    
+    # SYNC to journal tags
+    await sync_trade_to_journal(user.id, data, db)
+    
+    await db.commit()
+    return {"ok": True, "trade": trade.data}
 
 
 # ── Account Management ────────────────────────────────────────────────────────
@@ -1388,6 +1520,12 @@ Format Markdown. Bold setiap poin utama. Struktur:
         return {"success": True, "insight": response.choices[0].message.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/news")
+async def get_news():
+    """Returns the cached economic news calendar."""
+    return _news_cache
 
 
 # ── Alert Evaluator Background Loop ──────────────────────────────────────────
