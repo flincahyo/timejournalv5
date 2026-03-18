@@ -1,289 +1,347 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { BackHandler, Platform, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
-import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import * as Updates from 'expo-updates';
-import { loadRemoteConfig, AppConfig } from './services/remoteConfig';
-import { registerForPushNotificationsAsync } from './services/notifications';
+import {
+  View, ScrollView, Dimensions, Text, TouchableOpacity,
+  BackHandler, ToastAndroid, Animated, Easing, Platform, UIManager
+} from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts, Montserrat_400Regular, Montserrat_700Bold } from '@expo-google-fonts/montserrat';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { BookOpen, Home, Briefcase } from 'lucide-react-native';
+import Reanimated, { 
+  FadeIn, FadeOut, 
+  SlideInRight, SlideOutLeft, 
+  SlideInLeft, SlideOutRight,
+  useSharedValue, useAnimatedStyle, withSpring
+} from 'react-native-reanimated';
 import './global.css';
 
-export default function App() {
-  const webViewRef = useRef<WebView>(null);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [overrideBg, setOverrideBg] = useState<string | null>(null);
+// Screens
+import HomeScreen from './screens/HomeScreen';
+import TrackerScreen from './screens/TrackerScreen';
+import PortfolioScreen from './screens/PortfolioScreen';
+import LoginScreen from './screens/LoginScreen';
+import SignupScreen from './screens/SignupScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePushNotifications } from './hooks/usePushNotifications';
+import { API_URL } from './Constants';
 
-  // Remote config + OTA state
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [loadingConfig, setLoadingConfig] = useState(true);
-  const [otaChecking, setOtaChecking] = useState(false);
+SplashScreen.preventAutoHideAsync();
 
-  // ── Startup: Remote Config + OTA check ─────────────────────────────────────
-  useEffect(() => {
-    async function startup() {
-      // 1. Check for OTA updates (non-blocking, only in production)
-      if (!__DEV__) {
-        try {
-          setOtaChecking(true);
-          const update = await Updates.checkForUpdateAsync();
-          if (update.isAvailable) {
-            await Updates.fetchUpdateAsync();
-            // Reload app to apply the new JS bundle
-            await Updates.reloadAsync();
-            return; // Will reload — no point continuing
-          }
-        } catch (e) {
-          console.warn('[OTA] Update check failed (offline?):', e);
-        } finally {
-          setOtaChecking(false);
-        }
-      }
-
-      // 2. Fetch remote config (server URL, etc.)
-      const remoteConfig = await loadRemoteConfig();
-      setConfig(remoteConfig);
-      setLoadingConfig(false);
-    }
-
-    startup();
-  }, []);
-
-  // ── Push notification + Hardware back button ────────────────────────────────
-  const [pushToken, setPushToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    registerForPushNotificationsAsync().then((token) => {
-      if (token) {
-        console.log('[Push] Registered:', token);
-        setPushToken(token);
-      }
-    });
-
-    if (Platform.OS === 'android') {
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (canGoBack && webViewRef.current) {
-          webViewRef.current.goBack();
-          return true;
-        }
-        return false;
-      });
-      return () => backHandler.remove();
-    }
-  }, [canGoBack]);
-
-  // ── WebView message bridge ──────────────────────────────────────────────────
-  const handleWebViewMessage = async (event: WebViewMessageEvent) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'THEME_CHANGE') {
-        setTheme(data.theme);
-        setOverrideBg(data.bgColor || null);
-      } else if (data.type === 'NATIVE_NOTIFICATION') {
-        const Notifications = await import('expo-notifications');
-        Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          }),
-        });
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: data.title || 'Notification',
-            body: data.body || '',
-            data: data.data || {},
-          },
-          trigger: null,
-        });
-      } else if (data.type === 'USER_LOGGED_IN' && pushToken && data.jwt) {
-        // Register push token with backend
-        try {
-          const backendUrl = config?.backendUrl || 'https://api.timejournal.site';
-          const res = await fetch(`${backendUrl}/api/push-token`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${data.jwt}`,
-            },
-            body: JSON.stringify({ token: pushToken }),
-          });
-          if (res.ok) console.log('[Push] Token registered with backend');
-        } catch (err) {
-          console.error('[Push] Failed to register token:', err);
-        }
-      }
-    } catch (e) {
-      console.error('[Bridge] Failed to parse WebView message:', e);
-    }
-  };
-
-  // ── Injected JS: theme + navigation observer ────────────────────────────────
-  const injectedJS = `
-    (function() {
-      function sendTheme() {
-        const isDark = document.documentElement.classList.contains('dark');
-        const metaTheme = document.querySelector('meta[name="theme-color"]');
-        const overrideColor = (metaTheme && metaTheme.content) ? metaTheme.content : null;
-        window.ReactNativeWebView.postMessage(JSON.stringify({ 
-          type: 'THEME_CHANGE', 
-          theme: isDark ? 'dark' : 'light',
-          bgColor: overrideColor
-        }));
-      }
-
-      let tokenSent = false;
-      function checkAndSendPushToken() {
-        if (tokenSent) return;
-        const jwt = localStorage.getItem('uj_token');
-        if (jwt) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'USER_LOGGED_IN',
-            jwt: jwt
-          }));
-          tokenSent = true;
-        }
-      }
-
-      sendTheme();
-      checkAndSendPushToken();
-
-      // Hook into localStorage.setItem to catch login instantly
-      const originalSetItem = localStorage.setItem;
-      localStorage.setItem = function(key, value) {
-        originalSetItem.apply(this, arguments);
-        if (key === 'uj_token') {
-          checkAndSendPushToken();
-        }
-      };
-
-      // Also poll every 3 seconds just in case
-      setInterval(checkAndSendPushToken, 3000);
-
-      // Watch <html> class changes (dark/light toggle)
-      const themeObserver = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          if (mutation.attributeName === 'class') { sendTheme(); }
-        });
-      });
-      themeObserver.observe(document.documentElement, { attributes: true });
-
-      // Watch <head> for meta[name="theme-color"] add/remove/change
-      const headObserver = new MutationObserver(() => { sendTheme(); });
-      headObserver.observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] });
-
-      // Intercept Next.js client-side navigation
-      function patchHistory(type) {
-        const orig = history[type];
-        return function() {
-          const result = orig.apply(this, arguments);
-          setTimeout(sendTheme, 150);
-          setTimeout(checkAndSendPushToken, 1000);
-          return result;
-        };
-      }
-      history.pushState = patchHistory('pushState');
-      history.replaceState = patchHistory('replaceState');
-      window.addEventListener('popstate', () => {
-        setTimeout(sendTheme, 150);
-        setTimeout(checkAndSendPushToken, 1000);
-      });
-    })();
-    true;
-  `;
-
-  // ── Derived colors ──────────────────────────────────────────────────────────
-  const defaultBgColor = theme === 'dark' ? '#0f1117' : '#f4f6f8';
-  const bgColor = overrideBg || defaultBgColor;
-  const statusBarStyle = (bgColor === '#2e2523' || theme === 'dark') ? 'light' : 'dark';
-
-  // ── Loading / Maintenance screens ───────────────────────────────────────────
-  if (loadingConfig || otaChecking) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={[styles.center, { backgroundColor: '#0f1117' }]}>
-          <StatusBar style="light" backgroundColor="#0f1117" />
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>
-            {otaChecking ? 'Updating app...' : 'Loading config...'}
-          </Text>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
+if (Platform.OS === 'android') {
+  if (UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
   }
+}
 
-  if (config?.maintenanceMode) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={[styles.center, { backgroundColor: '#0f1117' }]}>
-          <StatusBar style="light" backgroundColor="#0f1117" />
-          <Text style={styles.maintenanceTitle}>🛠️ Maintenance</Text>
-          <Text style={styles.maintenanceText}>
-            {config.maintenanceMessage || 'The app is currently under maintenance. Please try again later.'}
-          </Text>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
-  }
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-  // ── Main WebView ────────────────────────────────────────────────────────────
+// ── Color palette ─────────────────────────────────────────────────────────────
+const ACCENT = '#6366f1';
+const ACCENT2 = '#8b5cf6';
+
+// ── Tab definitions ───────────────────────────────────────────────────────────
+// Tab order matches BLU ref: Tracker(0) | Home(1) | Portfolio(2)
+// Default active = 1 (Home)
+const TABS = [
+  { id: 'tracker',   label: 'Tracker',   Icon: BookOpen  },
+  { id: 'home',      label: 'Home',      Icon: Home      },
+  { id: 'portfolio', label: 'Portfolio', Icon: Briefcase },
+];
+const DEFAULT_TAB = 1;
+
+// ── Top Navigation Bar — flat individual tabs ────────────────────────────────
+function TopNavBar({
+  activeTab, onTabPress, isDark,
+}: {
+  activeTab: number;
+  onTabPress: (i: number) => void;
+  isDark: boolean;
+}) {
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top', 'left', 'right']}>
-        <StatusBar style={statusBarStyle} backgroundColor={bgColor} />
-        <WebView
-          ref={webViewRef}
-          source={{ uri: config!.webAppUrl }}
-          style={styles.webview}
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-          showsHorizontalScrollIndicator={false}
-          onNavigationStateChange={(navState) => setCanGoBack(navState.canGoBack)}
-          onMessage={handleWebViewMessage}
-          injectedJavaScript={injectedJS}
-          setSupportMultipleWindows={false}
-          scalesPageToFit={true}
-          cacheEnabled={true}
-        />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <View style={{
+      flexDirection: 'row',
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'space-around',
+    }}>
+      {TABS.map((tab, i) => {
+        const isActive = activeTab === i;
+        const { Icon } = tab;
+        return (
+          <TouchableOpacity
+            key={tab.id}
+            onPress={() => onTabPress(i)}
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingVertical: 9,
+              paddingHorizontal: isActive ? 18 : 14,
+              borderRadius: 24,
+              backgroundColor: isActive ? '#ffffff' : 'transparent',
+              shadowColor: '#000',
+              shadowOpacity: isActive ? 0.1 : 0,
+              shadowRadius: isActive ? 8 : 0,
+              elevation: isActive ? 3 : 0,
+            }}
+          >
+            <Icon
+              size={16}
+              strokeWidth={isActive ? 2.5 : 2}
+              color={isActive ? '#6366f1' : 'rgba(255,255,255,0.75)'}
+            />
+            {isActive && (
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '800',
+                letterSpacing: -0.2,
+                color: '#6366f1',
+              }}>
+                {tab.label}
+              </Text>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f4f6f8',
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    color: '#9ca3af',
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 8,
-  },
-  maintenanceTitle: {
-    color: '#ffffff',
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  maintenanceText: {
-    color: '#9ca3af',
-    fontSize: 15,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-    lineHeight: 24,
-  },
-});
+// ── Portfolio ref for jumping to Settings ─────────────────────────────────────
+function MainApp() {
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
+  const scrollRef = useRef<ScrollView>(null);
+  // scrollX drives the pill indicator natively — no JS-thread delay
+  const scrollX = useRef(new Animated.Value(DEFAULT_TAB * SCREEN_WIDTH)).current;
+  const [backClickCount, setBackClickCount] = useState(0);
+  const [userToken, setUserToken] = useState<string | null>(null);
+  const [appReady, setAppReady] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [portfolioInitialTab, setPortfolioInitialTab] = useState(0);
+  // Shared user state — single source of truth for both Home + Settings
+  const [sharedUser, setSharedUser] = useState<any>(null);
+
+  usePushNotifications();
+
+  const checkToken = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const logoutFlag = await AsyncStorage.getItem('logged_out');
+      setUserToken(token && logoutFlag !== 'true' ? token : null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAppReady(true);
+      // If we just logged in (from null to token), reset to Home
+      if (userToken === null) {
+        setActiveTab(DEFAULT_TAB);
+        setPortfolioInitialTab(0);
+        scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
+      }
+    }
+  };
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.setItem('logged_out', 'true');
+      setUserToken(null);
+      // Reset tab state on logout
+      setActiveTab(DEFAULT_TAB);
+      setPortfolioInitialTab(0);
+      scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
+      setSharedUser(null);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { checkToken(); }, []);
+
+  // Fetch user once after login — shared across Home & Settings
+  const fetchSharedUser = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
+      const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setSharedUser(await res.json());
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => { if (userToken) fetchSharedUser(); }, [userToken]);
+
+  // Called by AvatarPickerModal when avatar changes — instantly updates both screens
+  const handleUserUpdated = useCallback((patch: Partial<any>) => {
+    setSharedUser((prev: any) => prev ? { ...prev, ...patch } : patch);
+  }, []);
+
+  const navigateTo = useCallback((index: number, portfolioTab?: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (portfolioTab !== undefined) setPortfolioInitialTab(portfolioTab);
+    // Pill: instant visual feedback via scrollX (no re-render needed)
+    scrollX.setValue(index * SCREEN_WIDTH);
+    // Content: instant switch — same feel as completing a swipe
+    scrollRef.current?.scrollTo({ x: index * SCREEN_WIDTH, animated: false });
+    // Defer activeTab state update to AFTER scroll so setActiveTab re-render
+    // doesn't block the scroll/content switch on the JS thread
+    setActiveTab(index);
+  }, [scrollX]);
+
+  const handleScrollEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    if (idx !== activeTab && idx >= 0 && idx < TABS.length) setActiveTab(idx);
+  }, [activeTab]);
+
+  // Navigate to Settings (Portfolio tab, Settings sub-tab)
+  const openSettings = useCallback(() => {
+    navigateTo(2, 3);
+  }, [navigateTo]);
+
+  // Stable callbacks for tab screen props — avoids invalidating React.memo on every render
+  const handleTrackerNavigate = useCallback((id: string) => {
+    const idx = TABS.findIndex(t => t.id === id);
+    if (idx >= 0) navigateTo(idx);
+  }, [navigateTo]);
+
+  const handleHomeNavigate = useCallback((id: string) => {
+    const idx = TABS.findIndex(t => t.id === id);
+    if (idx >= 0) navigateTo(idx);
+  }, [navigateTo]);
+
+  const handleTabPress = useCallback((i: number) => navigateTo(i), [navigateTo]);
+
+  useEffect(() => {
+    const backAction = () => {
+      if (activeTab !== DEFAULT_TAB) { navigateTo(DEFAULT_TAB); return true; }
+      if (backClickCount === 1) { BackHandler.exitApp(); return true; }
+      setBackClickCount(1);
+      ToastAndroid.show("Press back again to exit", ToastAndroid.SHORT);
+      setTimeout(() => setBackClickCount(0), 2000);
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", backAction);
+    return () => sub.remove();
+  }, [backClickCount, activeTab]);
+
+  const authOffset = useSharedValue(0);
+
+  useEffect(() => {
+    authOffset.value = withSpring(isRegistering ? -SCREEN_WIDTH : 0, {
+      damping: 24,
+      stiffness: 100,
+    });
+  }, [isRegistering]);
+
+  const authStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: authOffset.value }]
+  }));
+
+  if (!appReady) return null;
+
+  if (!userToken) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? '#12101f' : '#6366f1', overflow: 'hidden' }}>
+        <Reanimated.View style={[{ flexDirection: 'row', width: SCREEN_WIDTH * 2, flex: 1 }, authStyle]}>
+          <View style={{ width: SCREEN_WIDTH }}>
+            <LoginScreen onLoginSuccess={() => checkToken()} onRegister={() => setIsRegistering(true)} />
+          </View>
+          <View style={{ width: SCREEN_WIDTH }}>
+            <SignupScreen onBack={() => setIsRegistering(false)} onRegisterSuccess={() => checkToken()} />
+          </View>
+        </Reanimated.View>
+      </View>
+    );
+  }
+
+  // Two-tone layout — both modes:
+  //  Dark:  deep dark-indigo header (#12101f) ➜ standard dark content (#0b0e11)
+  //  Light: bright indigo header (#6366f1) ➜ light content card (#f5f7fa)
+  const headerBg = isDark ? '#12101f' : '#6366f1';
+  const contentBg = isDark ? '#0b0e11' : '#f5f7fa';
+
+  return (
+    <View style={{ flex: 1, backgroundColor: headerBg }}>
+      {/* ── Colored Header Area ─────────────────────────────────────────────── */}
+      <View style={{ paddingTop: insets.top + 8, paddingBottom: 16 }}>
+        <TopNavBar activeTab={activeTab} onTabPress={handleTabPress} isDark={isDark} />
+      </View>
+
+      {/* ── Content Card (rounded top, white in light mode) ───────────────── */}
+      <View style={{
+        flex: 1,
+        backgroundColor: contentBg,
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        overflow: 'hidden',
+      }}>
+        <Animated.ScrollView
+          ref={scrollRef}
+          horizontal pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handleScrollEnd}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
+          )}
+          bounces={false}
+          scrollEventThrottle={1}
+          style={{ flex: 1 }}
+          contentOffset={{ x: DEFAULT_TAB * SCREEN_WIDTH, y: 0 }}
+        >
+        {/* Tab 0: Tracker */}
+        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <TrackerScreen onNavigate={handleTrackerNavigate} />
+        </View>
+
+        {/* Tab 1: Home */}
+        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <HomeScreen
+            onNavigate={handleHomeNavigate}
+            onOpenSettings={openSettings}
+            user={sharedUser}
+          />
+        </View>
+
+        {/* Tab 2: Portfolio */}
+        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <PortfolioScreen
+            onLogout={handleLogout}
+            initialTab={portfolioInitialTab}
+            onUserUpdated={handleUserUpdated}
+          />
+        </View>
+        </Animated.ScrollView>
+      </View>
+    </View>
+  );
+}
+
+export default function App() {
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const [fontsLoaded] = useFonts({ Montserrat_400Regular, Montserrat_700Bold });
+
+  useEffect(() => {
+    // Set light mode as default on first launch (user can still toggle in Settings)
+    setColorScheme('light');
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} translucent backgroundColor="transparent" />
+      <MainApp />
+    </SafeAreaProvider>
+  );
+}

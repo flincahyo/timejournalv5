@@ -123,11 +123,23 @@ def deal_to_trade(deal):
 def get_account(login):
     acc = mt5.account_info()
     if not acc: return {}
+    
+    # Calculate total deposit from history
+    total_deposit = 0.0
+    date_from = datetime.datetime(2000, 1, 1)
+    date_to = datetime.datetime.now() + datetime.timedelta(hours=1)
+    deals = mt5.history_deals_get(date_from, date_to) or []
+    for d in deals:
+        # DEAL_TYPE_BALANCE is 2, profit > 0 for deposits, < 0 for withdrawals
+        if getattr(d, 'type', -1) == 2 and getattr(d, 'profit', 0) > 0:
+            total_deposit += d.profit
+
     return {
         "login": acc.login, "name": acc.name, "server": acc.server,
         "balance": acc.balance, "equity": acc.equity, "margin": acc.margin,
         "freeMargin": acc.margin_free, "profit": acc.profit,
         "currency": acc.currency, "leverage": acc.leverage,
+        "deposit": total_deposit or acc.balance, # Fallback to balance if history empty
     }
 
 import argparse

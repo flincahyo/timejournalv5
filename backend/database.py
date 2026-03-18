@@ -60,6 +60,7 @@ class MT5Account(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     last_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     account_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    symbols: Mapped[list] = mapped_column(JSONB, default=list, nullable=False, server_default=text("'[]'"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, server_default=text("now()"))
 
     user: Mapped["User"] = relationship(back_populates="mt5_accounts")
@@ -146,6 +147,7 @@ class UserSettings(Base):
     news_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     terminal_layout: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     recap_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
+    audio_settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False, server_default=text("'{}'"))
     expo_push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default=text("now()"))
 
@@ -211,6 +213,8 @@ async def init_db():
         "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS recap_settings JSONB NOT NULL DEFAULT '{}';",
         "ALTER TABLE alerts ALTER COLUMN data TYPE JSONB USING data::jsonb;",
         "ALTER TABLE alert_history ALTER COLUMN data TYPE JSONB USING data::jsonb;",
+        "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS audio_settings JSONB NOT NULL DEFAULT '{}';",
+        "ALTER TABLE mt5_accounts ADD COLUMN IF NOT EXISTS symbols JSONB NOT NULL DEFAULT '[]';",
     ]
 
     for stmt in migration_stmts:

@@ -45,7 +45,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-updates"
+      "expo-updates",
+      "expo-audio"
     ],
     "updates": {
       "enabled": true,

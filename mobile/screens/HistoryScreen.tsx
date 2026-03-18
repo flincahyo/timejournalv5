@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { API_URL } from '../Constants';
 import { MainLayout } from '../layouts/MainLayout';
+import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
 import Svg, { Path, Defs, LinearGradient, Stop, Polygon } from 'react-native-svg';
 
 // Gluestack Shim or local components
@@ -24,13 +25,16 @@ import { HStack } from '../components/ui/hstack';
 
 // ── Daily group card (extracted for memoization) ────────────────────────────────
 const DailyGroupCard = React.memo(({
-  group, isDark, isExp, onToggle, journalData, saveNote, toggleDailyTag, onOpenRecap
+  group, isDark, isExp, date, onToggleDay, journalData, saveNote, toggleDailyTag, onOpenRecap
 }: {
-  group: any; isDark: boolean; isExp: boolean; onToggle: () => void;
+  group: any; isDark: boolean; isExp: boolean; date: string;
+  onToggleDay: (day: string) => void;
   journalData: any; saveNote: (day: string, text: string) => void;
   toggleDailyTag: (day: string, tag: string) => void;
   onOpenRecap: (trade: any) => void;
 }) => {
+  // Call parent stable callback
+  const handleToggle = useCallback(() => onToggleDay(date), [date, onToggleDay]);
   const displayDate = new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const isPos = group.totalPnl >= 0;
 
@@ -38,7 +42,7 @@ const DailyGroupCard = React.memo(({
     <Box className="mb-4 bg-white dark:bg-slate-900 rounded-[28px] overflow-hidden border border-slate-100 dark:border-slate-800">
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={onToggle}
+        onPress={handleToggle}
         style={{ padding: 16 }}
       >
         {/* Top row: chevron + date + P&L */}
@@ -542,58 +546,39 @@ const HistoryScreen = React.memo(() => {
     fetchData();
   };
 
-  const saveNote = async (day: string, text: string) => {
+  const toggleDay = useCallback((day: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedDays(p => ({ ...p, [day]: !p[day] }));
+  }, []);
+
+  const saveNote = useCallback(async (day: string, text: string) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       await fetch(`${API_URL}/journal/note`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ day, text })
       });
-      setJournalData((prev: any) => ({
-        ...prev,
-        notes: { ...prev.notes, [day]: text }
-      }));
-    } catch (e) {
-      console.error("Save note error:", e);
-    }
-  };
+      setJournalData((prev: any) => ({ ...prev, notes: { ...prev.notes, [day]: text } }));
+    } catch (e) { console.error('Save note error:', e); }
+  }, []);
 
-  const toggleDailyTag = async (day: string, tagName: string) => {
+  const toggleDailyTag = useCallback(async (day: string, tagName: string) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       await fetch(`${API_URL}/journal/daily-tag/toggle`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ day, tag: tagName })
       });
-      
       setJournalData((prev: any) => {
-        const currentDT = prev.dailyTags[day] || [];
-        const newDT = currentDT.includes(tagName)
-          ? currentDT.filter((t: string) => t !== tagName)
-          : [...currentDT, tagName];
-        return {
-          ...prev,
-          dailyTags: { ...prev.dailyTags, [day]: newDT }
-        };
+        const cur = prev.dailyTags[day] || [];
+        const next = cur.includes(tagName) ? cur.filter((t: string) => t !== tagName) : [...cur, tagName];
+        return { ...prev, dailyTags: { ...prev.dailyTags, [day]: next } };
       });
-    } catch (e) {
-      console.error("Toggle tag error:", e);
-    }
-  };
-
-  const toggleDay = (day: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedDays(p => ({ ...p, [day]: !p[day] }));
-  };
+    } catch (e) { console.error('Toggle tag error:', e); }
+  }, []);
 
   const setF = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
   const setRecapF = (k: string, v: any) => setRecapForm((p: any) => ({ ...p, [k]: v }));
@@ -739,9 +724,50 @@ const HistoryScreen = React.memo(() => {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#f8fafc', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color="#3b82f6" />
-      </View>
+      <MainLayout>
+        <VStack className="flex-1 px-6 pt-6" space="md">
+          {/* Tabs Skeleton */}
+          <SkeletonRect width="100%" height={40} borderRadius={20} isDark={isDark} style={{ marginBottom: 20 }} />
+          
+          {/* Quick Filters Skeleton */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <SkeletonRect width={80} height={32} borderRadius={99} isDark={isDark} />
+            <SkeletonRect width={80} height={32} borderRadius={99} isDark={isDark} />
+            <SkeletonRect width={80} height={32} borderRadius={99} isDark={isDark} />
+          </View>
+
+          {/* List Scroll Skeleton */}
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {[1, 2, 3].map(i => (
+              <View key={i} style={{ marginBottom: 16, backgroundColor: isDark ? '#0f172a' : '#fff', borderRadius: 28, padding: 16, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <SkeletonRect width={28} height={28} borderRadius={8} isDark={isDark} />
+                    <View style={{ gap: 4 }}>
+                      <SkeletonRect width={120} height={14} isDark={isDark} />
+                      <SkeletonRect width={60} height={8} isDark={isDark} />
+                    </View>
+                  </View>
+                  <SkeletonRect width={80} height={14} isDark={isDark} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <SkeletonRect width={110} height={56} borderRadius={8} isDark={isDark} />
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                      {[1, 2, 3, 4, 5, 6].map(j => (
+                        <View key={j} style={{ width: '33.33%', padding: 4 }}>
+                          <SkeletonRect width={30} height={8} style={{ marginBottom: 4 }} isDark={isDark} />
+                          <SkeletonRect width={40} height={12} isDark={isDark} />
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </VStack>
+      </MainLayout>
     );
   }
 
@@ -854,7 +880,8 @@ const HistoryScreen = React.memo(() => {
                 group={group}
                 isDark={isDark}
                 isExp={expandedDays[group.date] ?? (idx === 0)}
-                onToggle={() => toggleDay(group.date)}
+                date={group.date}
+                onToggleDay={toggleDay}
                 journalData={journalData}
                 saveNote={saveNote}
                 toggleDailyTag={toggleDailyTag}

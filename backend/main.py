@@ -97,17 +97,28 @@ async def broadcast_to_user(user_id: str, msg: dict):
     for ws in dead:
         _ws_clients[user_id].remove(ws)
 
-async def send_expo_push_notification(token: str, title: str, body: str, data: dict = None):
+async def broadcast_to_all(msg: dict):
+    """Broadcasts a message to ALL currently connected WebSockets."""
+    for user_id in list(_ws_clients.keys()):
+        await broadcast_to_user(user_id, msg)
+
+async def send_expo_push_notification(token: str, title: str, body: str, data: dict = None, sound: str = "default"):
     """Sends a push notification using Expo's push API."""
     if not token or not token.startswith("ExponentPushToken"):
         return
     
+    # If sound is a URL (custom upload), Expo might not play it directly as a system sound
+    # unless it's bundled. But we set it in 'sound' field for Expo to try,
+    # and also in 'data' for the app to play when in foreground.
     message = {
         "to": token,
-        "sound": "default",
+        "sound": sound if sound and not sound.startswith("http") else "default",
         "title": title,
         "body": body,
-        "data": data or {},
+        "data": {**(data or {}), "sound": sound},
+        "priority": "high",
+        "channelId": "default"
+    }
     }
     try:
         async with httpx.AsyncClient() as client:
@@ -334,6 +345,15 @@ async def on_mt5_message(user_id: str, msg: dict):
                         target_acc.account_info = msg.get("account", {})
                         target_acc.last_sync = datetime.datetime.utcnow()
                         await db.commit()
+            elif msg_type == "symbols":
+                async with AsyncSessionLocal() as db:
+                    target_acc = await db.get(MT5Account, aid)
+                    if target_acc:
+                        target_acc.symbols = msg.get("symbols", [])
+                        target_acc.last_sync = datetime.datetime.utcnow()
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(target_acc, "symbols")
+                        await db.commit()
             await broadcast_to_user(uid, msg)
 
 
@@ -532,6 +552,18 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
+
+@app.get("/api/auth/me")
+async def get_me(user: User = Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "image": user.image,
+        "createdAt": user.created_at.isoformat(),
+    }
+
+
 @app.put("/api/auth/profile")
 async def update_profile(req: ProfileUpdateRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if req.name is not None:
@@ -575,30 +607,65 @@ async def upload_avatar(file: UploadFile = File(...), user: User = Depends(get_c
     # Accessible via static mount
     url = f"/uploads/{filename}"
     
-    # Optional: Update user image in DB immediately
+    # Optional: Update user image
     user.image = url
     await db.commit()
-    
-    return {"url": url}
+    return {"id": user.id, "url": url}
 
 
 @app.post("/api/auth/upload-sound")
 async def upload_sound(file: UploadFile = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Upload custom notification sounds (mp3, wav, etc.)"""
     os.makedirs("uploads/sounds", exist_ok=True)
-    
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in [".mp3", ".wav", ".ogg", ".m4a"]:
         raise HTTPException(status_code=400, detail="Unsupported audio format")
 
     filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join("uploads/sounds", filename)
-    
     with open(filepath, "wb") as f:
         f.write(await file.read())
     
     url = f"/uploads/sounds/{filename}"
-    return {"url": url}
+    
+    # Save to user settings
+    res = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = res.scalar_one_or_none()
+    if not settings:
+        settings = UserSettings(user_id=user.id)
+        db.add(settings)
+    
+    audio = settings.audio_settings or {}
+    custom = audio.get("custom_sounds", [])
+    new_sound = {"id": url, "name": file.filename, "url": url}
+    custom.append(new_sound)
+    audio["custom_sounds"] = custom
+    settings.audio_settings = audio
+    
+    await db.commit()
+    return new_sound
+
+
+@app.get("/api/auth/sounds")
+async def get_sounds(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = res.scalar_one_or_none()
+    if not settings: return {"custom_sounds": []}
+    return {"custom_sounds": (settings.audio_settings or {}).get("custom_sounds", [])}
+
+
+@app.delete("/api/auth/sounds")
+async def delete_sound(sound_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = res.scalar_one_or_none()
+    if not settings: return {"ok": False}
+    
+    audio = settings.audio_settings or {}
+    custom = audio.get("custom_sounds", [])
+    filtered = [s for s in custom if s["id"] != sound_id]
+    audio["custom_sounds"] = filtered
+    settings.audio_settings = audio
+    await db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/auth/settings")
@@ -849,6 +916,14 @@ async def receive_price_push(
     
     _price_cache.update(payload.prices)
     _candle_cache.update(payload.candles)
+    
+    # Broadcast to all users for real-time UI updates
+    asyncio.create_task(broadcast_to_all({
+        "type": "prices",
+        "prices": payload.prices,
+        "candles": payload.candles
+    }))
+    
     return {"ok": True, "cached_symbols": len(_price_cache)}
 
 
@@ -872,6 +947,21 @@ async def register_push_token(
     await db.commit()
     print(f"🔔 Push token registered for user {user.id}: {req.token[:30]}...")
     return {"ok": True}
+
+
+@app.get("/api/mt5/symbols")
+async def get_mt5_symbols(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns the list of available symbols for the user's active account."""
+    result = await db.execute(
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
+    )
+    acc = result.scalar_one_or_none()
+    if not acc:
+        return {"symbols": []}
+    return {"symbols": acc.symbols or []}
 
 
 
@@ -926,6 +1016,12 @@ async def get_alert_symbols(
     symbols.update(active_watched)
         
     return {"symbols": list(symbols)}
+    
+@app.post("/api/mt5/watch/{symbol}")
+async def watch_symbol(symbol: str, user: User = Depends(get_current_user)):
+    """Temporarily watch a symbol for real-time price updates in the UI."""
+    _watching_symbols[symbol.upper()] = time.time() + 60  # Watch for 60 seconds
+    return {"ok": True}
 
 
 @app.get("/api/mt5/trades")
@@ -1195,6 +1291,16 @@ async def ws_mt5(ws: WebSocket):
         return
 
     await ws.accept()
+    
+    # Send initial price/candle cache immediately so UI doesn't stay on "Connecting..."
+    try:
+        await ws.send_text(json.dumps({
+            "type": "prices",
+            "prices": _price_cache,
+            "candles": _candle_cache
+        }))
+    except Exception as e:
+        print(f"DEBUG WS: Failed to send initial cache: {e}")
     if user_id not in _ws_clients:
         _ws_clients[user_id] = []
     _ws_clients[user_id].append(ws)
@@ -1230,6 +1336,13 @@ async def ws_bridge_prices(ws: WebSocket):
                 _price_cache.update(data["prices"])
             if "candles" in data:
                 _candle_cache.update(data["candles"])
+            
+            # Broadcast to all users
+            asyncio.create_task(broadcast_to_all({
+                "type": "prices",
+                "prices": data.get("prices", {}),
+                "candles": data.get("candles", {})
+            }))
     except WebSocketDisconnect:
         print(f"DEBUG BRIDGE WS: MT5 Bridge disconnected: {ws.client}")
     except Exception as e:
@@ -1631,7 +1744,8 @@ async def _alert_evaluator_loop():
                                 if push_token:
                                     await send_expo_push_notification(
                                         push_token, title, body,
-                                        {"alertId": alert_id, "symbol": symbol}
+                                        {"alertId": alert_id, "symbol": symbol},
+                                        sound=alert.get("sound", "default")
                                     )
                                 
                                 # Disable "Once" alerts
