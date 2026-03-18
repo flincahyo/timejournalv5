@@ -119,7 +119,6 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
         "priority": "high",
         "channelId": "default"
     }
-    }
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
