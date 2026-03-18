@@ -1,11 +1,8 @@
 "use client";
 import React, { ReactNode, useState, useEffect } from "react";
-import { Montserrat } from "next/font/google";
 import "@/app/globals.css";
 import { Sun, Moon } from "lucide-react";
 import { BrandLogo } from "@/components/layout/BrandLogo";
-
-const font = Montserrat({ subsets: ["latin"], weight: ["400", "700", "900"] });
 
 export default function PublicLayout({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
@@ -23,7 +20,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className={`${theme} ${font.className} min-h-screen bg-bg text-text selection:bg-accent/20 transition-colors duration-300`}>
+    <div className={`${theme} min-h-screen bg-bg text-text selection:bg-accent/20 transition-colors duration-300`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
       <header className="sticky top-0 z-50 w-full border-b border-border bg-bg/80 backdrop-blur-md h-[56px] flex items-center">
         <div className="w-full max-w-7xl mx-auto px-4 md:px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">

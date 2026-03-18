@@ -1,14 +1,8 @@
 "use client";
-import { Montserrat } from "next/font/google";
-
-const montserrat = Montserrat({ 
-  subsets: ["latin"],
-  weight: ["400", "700"]
-});
 
 export function BrandLogo({ className = "" }: { className?: string }) {
   return (
-    <div className={`flex items-center gap-0 relative group ${montserrat.className} ${className}`}>
+    <div className={`flex items-center gap-0 relative group ${className}`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
       {/* Decorative Ring - Use theme color with opacity for consistency */}
       <div className="absolute left-[55px] top-1/2 -translate-y-1/2 mt-[5px] w-3.5 h-3.5 rounded-full border-[2.2px] border-text opacity-40 dark:opacity-60 pointer-events-none group-hover:scale-125 transition-all duration-500" />
       

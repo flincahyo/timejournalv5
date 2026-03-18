@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import NextTopLoader from "nextjs-toploader";
 import { NewsWatcher } from "@/components/layout/NewsWatcher";
@@ -18,14 +17,9 @@ export const metadata: Metadata = {
   description: "Professional forex trading journal with live MT5 sync",
 };
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={inter.variable} suppressHydrationWarning>
+    <html lang="id" suppressHydrationWarning>
       <head>
         {/* Anti-flash: apply theme before first paint */}
         <script dangerouslySetInnerHTML={{

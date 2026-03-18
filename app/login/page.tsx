@@ -7,9 +7,6 @@ import { authLogin, authRegister, authGoogleDemo, authGetMe } from "@/lib/auth";
 import { getToken } from "@/lib/api";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { motion, AnimatePresence } from "framer-motion";
-import { Montserrat } from "next/font/google";
-
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700", "800", "900"] });
 
 /* ─── Running Clock + Animated Candlestick Overlay ───────────────────────── */
 function ArtWidget() {
@@ -176,7 +173,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className={`${montserrat.className} selection:bg-accent/20 selection:text-accent`}>
+    <div className="selection:bg-accent/20 selection:text-accent" style={{ fontFamily: "'Montserrat', sans-serif" }}>
       <style>{`
         @keyframes scrollCandle {
           from { transform: translateX(0); }
