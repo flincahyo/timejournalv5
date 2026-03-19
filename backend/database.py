@@ -152,6 +152,17 @@ class UserSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, server_default=text("now()"))
 
     user: Mapped["User"] = relationship(back_populates="settings")
+    
+    def to_dict(self):
+        return {
+            "theme": self.theme,
+            "newsSettings": self.news_settings,
+            "terminalLayout": self.terminal_layout,
+            "recapSettings": self.recap_settings,
+            "audioSettings": self.audio_settings,
+            "expoPushToken": self.expo_push_token,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+        }
 
 
 class PublicShare(Base):
