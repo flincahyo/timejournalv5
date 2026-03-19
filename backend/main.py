@@ -104,7 +104,8 @@ async def broadcast_to_all(msg: dict):
 
 async def send_expo_push_notification(token: str, title: str, body: str, data: dict = None, sound: str = "default"):
     """Sends a push notification using Expo's push API."""
-    if not token or not token.startswith("ExponentPushToken"):
+    if not token or not (token.startswith("ExponentPushToken") or token.startswith("ExpoPushToken")):
+        print(f"DEBUG PUSH: Invalid token format: {token[:20]}...")
         return
     
     # If sound is a URL (custom upload), Expo might not play it directly as a system sound
@@ -112,10 +113,10 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
     # and also in 'data' for the app to play when in foreground.
     message = {
         "to": token,
-        "sound": sound if sound and not sound.startswith("http") else "default",
+        "sound": "default", # Use system default for the notification sound slot
         "title": title,
         "body": body,
-        "data": {**(data or {}), "sound": sound},
+        "data": {**(data or {}), "sound": sound}, # Pass the specific sound name in data
         "priority": "high",
         "channelId": "default"
     }
