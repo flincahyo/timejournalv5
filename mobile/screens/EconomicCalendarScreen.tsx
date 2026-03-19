@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Animated, Easing, Dimensions } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { Calendar, BrainCircuit, Filter, ChevronLeft, ChevronRight, X, Sparkles, Brain, RefreshCw, Clock, Globe } from 'lucide-react-native';
+import { 
+  Calendar, BrainCircuit, Filter, ChevronLeft, ChevronRight, X, Sparkles, Brain, 
+  RefreshCw, Clock, Globe, Bell, BellRing, Settings, Sliders, Check, Music
+} from 'lucide-react-native';
 import { AILoadingAnimation } from '../components/AILoadingAnimation';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -97,13 +100,22 @@ interface FFEvent {
   previous: string;
 }
 
-export default function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s: string) => void }) {
+const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s: string) => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   
   const [events, setEvents] = useState<FFEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDayIdx, setActiveDayIdx] = useState(0);
+
+  // News Alerts State
+  const [newsSettings, setNewsSettings] = useState<any>({
+    enabled: true,
+    minutesBefore: 5,
+    selectedEvents: [],
+    autoHighImpact: false
+  });
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   // AI Modal State
   const [aiModalVisible, setAiModalVisible] = useState(false);
@@ -112,7 +124,51 @@ export default function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s
 
   useEffect(() => {
     fetchEvents();
+    fetchNewsSettings();
   }, []);
+
+  const fetchNewsSettings = async () => {
+    try {
+      const jwt = await AsyncStorage.getItem('userToken');
+      const res = await fetch(`${BACKEND_URL}/api/auth/news-settings`, {
+        headers: { Authorization: `Bearer ${jwt}` }
+      });
+      const data = await res.json();
+      if (data) setNewsSettings(data);
+    } catch (e) {
+      console.error("Error fetching news settings:", e);
+    }
+  };
+
+  const updateNewsSettings = async (patch: any) => {
+    const updated = { ...newsSettings, ...patch };
+    setNewsSettings(updated);
+    try {
+      const jwt = await AsyncStorage.getItem('userToken');
+      await fetch(`${BACKEND_URL}/api/auth/news-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        body: JSON.stringify(patch)
+      });
+    } catch (e) {
+      console.error("Error updating news settings:", e);
+    }
+  };
+
+  const toggleEventAlert = (ev: FFEvent) => {
+    const evKey = `${ev.title}_${ev.country}_${ev.date}`;
+    const current = [...(newsSettings.selectedEvents || [])];
+    const idx = current.indexOf(evKey);
+    
+    if (idx > -1) {
+      current.splice(idx, 1);
+    } else {
+      current.push(evKey);
+    }
+    
+    updateNewsSettings({ selectedEvents: current });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
 
   const fetchEvents = async () => {
     try {
@@ -219,10 +275,18 @@ export default function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s
                 News
               </Text>
            </View>
-           <SparklingButton 
-             onPress={() => { Haptics.selectionAsync(); setAiModalVisible(true); }} 
-             loading={isGeneratingAI} 
-           />
+           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TouchableOpacity 
+                onPress={() => { Haptics.selectionAsync(); setSettingsModalVisible(true); }}
+                style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: isDark ? '#1e293b' : '#f8fafc', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}
+              >
+                 <Sliders size={20} color={isDark ? '#cbd5e1' : '#475569'} />
+              </TouchableOpacity>
+              <SparklingButton 
+                onPress={() => { Haptics.selectionAsync(); setAiModalVisible(true); }} 
+                loading={isGeneratingAI} 
+              />
+           </View>
         </View>
 
         {/* Minimalist Day Selector */}
@@ -298,10 +362,27 @@ export default function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s
                             <Text style={{ fontSize: 9, fontWeight: 'bold', color: isDark ? '#475569' : '#94a3b8' }}>F:</Text>
                             <Text style={{ fontSize: 9, fontWeight: '900', color: isDark ? '#cbd5e1' : '#475569' }}>{e.forecast || '-'}</Text>
                          </View>
-                         <View style={{ flexDirection: 'row', gap: 4 }}>
+                         <View style={{ flexDirection: 'row', gap: 4, marginBottom: 8 }}>
                             <Text style={{ fontSize: 9, fontWeight: 'bold', color: isDark ? '#475569' : '#94a3b8' }}>P:</Text>
                             <Text style={{ fontSize: 9, fontWeight: '900', color: isDark ? '#cbd5e1' : '#475569' }}>{e.previous || '-'}</Text>
                          </View>
+                         
+                         {/* Alert Toggle Bell */}
+                         {!isPast && (
+                            <TouchableOpacity 
+                              onPress={() => toggleEventAlert(e)}
+                              style={{ 
+                                width: 32, height: 32, borderRadius: 10, 
+                                backgroundColor: (newsSettings.selectedEvents?.includes(`${e.title}_${e.country}_${e.date}`) || (newsSettings.autoHighImpact && e.impact === 'High')) ? (isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)') : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
+                                alignItems: 'center', justifyContent: 'center'
+                              }}
+                            >
+                               {(newsSettings.selectedEvents?.includes(`${e.title}_${e.country}_${e.date}`) || (newsSettings.autoHighImpact && e.impact === 'High')) 
+                                 ? <BellRing size={14} color="#6366f1" strokeWidth={2.5} />
+                                 : <Bell size={14} color={isDark ? '#475569' : '#94a3b8'} strokeWidth={2} />
+                               }
+                            </TouchableOpacity>
+                         )}
                       </View>
                    </View>
                  );
@@ -382,6 +463,84 @@ export default function EconomicCalendarScreen({ onNavigate }: { onNavigate?: (s
             </View>
          </View>
       </Modal>
+      {/* News Alerts Settings Modal */}
+      <Modal visible={settingsModalVisible} animationType="slide" transparent={true}>
+         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
+            <View style={{ 
+              height: '50%', backgroundColor: isDark ? '#020617' : '#ffffff',
+              borderTopLeftRadius: 40, borderTopRightRadius: 40,
+              padding: 24, paddingBottom: 40
+            }}>
+               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                     <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }}>
+                        <Sliders size={20} color="#ffffff" />
+                     </View>
+                     <View>
+                        <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', fontFamily: 'Montserrat_700Bold' }}>News Notification</Text>
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Configure Alert Signals</Text>
+                     </View>
+                  </View>
+                  <TouchableOpacity onPress={() => setSettingsModalVisible(false)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', alignItems: 'center', justifyContent: 'center' }}>
+                     <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
+                  </TouchableOpacity>
+               </View>
+
+               <ScrollView showsVerticalScrollIndicator={false}>
+                  {/* Auto High Impact Toggle */}
+                  <TouchableOpacity 
+                    onPress={() => updateNewsSettings({ autoHighImpact: !newsSettings.autoHighImpact })}
+                    style={{ 
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      backgroundColor: isDark ? 'rgba(30, 41, 59, 0.3)' : '#f8fafc',
+                      padding: 20, borderRadius: 24, marginBottom: 20,
+                      borderWidth: 1, borderColor: isDark ? 'rgba(51, 65, 85, 0.5)' : '#f1f5f9'
+                    }}
+                  >
+                     <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', marginBottom: 4 }}>Auto-Alert High Impact</Text>
+                        <Text style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b', lineHeight: 16 }}>Automatically notify for all RED (High Impact) news without manual selection.</Text>
+                     </View>
+                     <View style={{ 
+                       width: 48, height: 26, borderRadius: 13, backgroundColor: newsSettings.autoHighImpact ? '#6366f1' : (isDark ? '#1e293b' : '#e2e8f0'),
+                       justifyContent: 'center', paddingHorizontal: 2, alignItems: newsSettings.autoHighImpact ? 'flex-end' : 'flex-start'
+                     }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#ffffff' }} />
+                     </View>
+                  </TouchableOpacity>
+
+                  {/* Lead Time Selection */}
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16, marginLeft: 4 }}>Alert Lead Time</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 32 }}>
+                     {[1, 5, 15, 30, 60].map(mins => (
+                        <TouchableOpacity 
+                          key={mins}
+                          onPress={() => updateNewsSettings({ minutesBefore: mins })}
+                          style={{ 
+                            paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16,
+                            backgroundColor: newsSettings.minutesBefore === mins ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'),
+                            borderWidth: 1, borderColor: newsSettings.minutesBefore === mins ? '#6366f1' : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9')
+                          }}
+                        >
+                           <Text style={{ fontSize: 12, fontWeight: '900', color: newsSettings.minutesBefore === mins ? '#ffffff' : (isDark ? '#cbd5e1' : '#475569') }}>
+                             {mins < 60 ? `${mins}m Before` : '1h Before'}
+                           </Text>
+                        </TouchableOpacity>
+                     ))}
+                  </View>
+
+                  <TouchableOpacity 
+                    onPress={() => setSettingsModalVisible(false)}
+                    style={{ backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#f5f7ff', paddingVertical: 18, borderRadius: 24, alignItems: 'center' }}
+                  >
+                     <Text style={{ color: '#6366f1', fontWeight: '900', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 }}>Done</Text>
+                  </TouchableOpacity>
+               </ScrollView>
+            </View>
+         </View>
+      </Modal>
     </View>
   );
-}
+});
+
+export default EconomicCalendarScreen;

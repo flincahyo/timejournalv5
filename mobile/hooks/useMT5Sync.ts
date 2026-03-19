@@ -64,10 +64,10 @@ export function useMT5Sync() {
 
   useEffect(() => {
     fetchData();
-    // Poll every 30 seconds if connected
+    // Poll every 10 seconds for responsive live updates
     const interval = setInterval(() => {
         fetchData();
-    }, 30000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 

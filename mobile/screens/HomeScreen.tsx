@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ScrollView, View, Text, TouchableOpacity, ActivityIndicator,
   RefreshControl, Animated, Easing, Modal, Dimensions, Image
@@ -71,6 +71,53 @@ function SparklingButton({ onPress, loading }: { onPress: () => void, loading: b
         <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.5 }}>AI Analyst</Text>
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+// ── Animated Bell Button ──────────────────────────────────────────────────────
+function BellButton({ onPress, hasUnread, isDark }: { onPress: () => void; hasUnread: boolean; isDark: boolean }) {
+  const swing = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!hasUnread) { swing.setValue(0); return; }
+    const animate = Animated.loop(
+      Animated.sequence([
+        Animated.timing(swing, { toValue: 1,   duration: 100, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -1,  duration: 100, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0.7, duration: 80,  easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -0.7,duration: 80,  easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0,   duration: 80,  easing: Easing.linear, useNativeDriver: true }),
+        Animated.delay(2800),
+      ])
+    );
+    animate.start();
+    return () => animate.stop();
+  }, [hasUnread]);
+
+  const rotate = swing.interpolate({ inputRange: [-1, 1], outputRange: ['-18deg', '18deg'] });
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={{
+        width: 38, height: 38, borderRadius: 14,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+      }}
+    >
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <Bell size={18} color={isDark ? 'rgba(255,255,255,0.6)' : '#94a3b8'} />
+      </Animated.View>
+      {hasUnread && (
+        <View style={{
+          position: 'absolute', top: 7, right: 7,
+          width: 7, height: 7, borderRadius: 3.5,
+          backgroundColor: '#ef4444',
+        }} />
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -281,10 +328,11 @@ function HomeScreenSkeleton({ isDark }: { isDark: boolean }) {
 }
 
 // ── Main HomeScreen ───────────────────────────────────────────────────────────
-const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
+const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unreadNotifications = 0 }: {
   onNavigate: (s: string) => void,
   onOpenSettings: () => void,
   user?: any,
+  unreadNotifications?: number,
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -317,10 +365,10 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
     }
   };
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try { await refresh(); } finally { setRefreshing(false); }
-  };
+  }, [refresh]);
 
   const stats = useMemo(() => {
     let growth = '0.0';
@@ -357,7 +405,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
     return { totalPnl, wins, losses, winRate, profitFactor, growth, todayPnl, todayTrades };
   }, [trades, accountInfo]);
 
-  const handleAIAnalyze = async () => {
+  const handleAIAnalyze = useCallback(async () => {
     if (trades.length === 0) { setShowAIModal(true); setAiInsight("No trade data found. Sync your MT5 account first."); return; }
     setShowAIModal(true); setIsGeneratingAI(true); setAiInsight(null);
     try {
@@ -366,6 +414,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
       const recentWins = recent.filter(t => (t.profit || 0) > 0).length;
       const payload = {
         totalTrades: trades.length, winRate: stats.winRate, totalPnl: stats.totalPnl,
+        bestSymbol: 'N/A', worstSymbol: 'N/A',
         recentStreaks: `${recentWins} wins out of last ${recent.length} trades.`,
         notes: `Growth: ${stats.growth}%. PF: ${stats.profitFactor.toFixed(2)}.`
       };
@@ -381,7 +430,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
     } finally {
       setIsGeneratingAI(false);
     }
-  };
+  }, [trades, stats]);
 
   if (loading) {
     return <HomeScreenSkeleton isDark={isDark} />;
@@ -417,9 +466,11 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp }: {
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <SparklingButton onPress={handleAIAnalyze} loading={isGeneratingAI} />
-              <TouchableOpacity style={{ width: 38, height: 38, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
-                <Bell size={18} color={isDark ? 'rgba(255,255,255,0.6)' : '#94a3b8'} />
-              </TouchableOpacity>
+              <BellButton
+                onPress={() => onNavigate('notifications')}
+                hasUnread={unreadNotifications > 0}
+                isDark={isDark}
+              />
             </View>
           </View>
 

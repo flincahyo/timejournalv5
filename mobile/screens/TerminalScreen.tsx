@@ -258,7 +258,7 @@ const PositionCard = ({ t, isDark }: { t: any; isDark: boolean }) => {
 };
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function TerminalScreen({ onNavigate }: { onNavigate?: (s: string) => void }) {
+const TerminalScreen = React.memo(function TerminalScreen({ onNavigate }: { onNavigate?: (s: string) => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -626,4 +626,6 @@ export default function TerminalScreen({ onNavigate }: { onNavigate?: (s: string
       )}
     </View>
   );
-}
+});
+
+export default TerminalScreen;

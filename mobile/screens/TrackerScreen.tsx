@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useTransition } from 'react';
 import {
-  View, Text, TouchableOpacity, Animated, Dimensions, ScrollView
+  View, Text, TouchableOpacity, Animated, Dimensions, ScrollView,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import HistoryScreen from './HistoryScreen';
@@ -25,6 +25,8 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
   const isDark = colorScheme === 'dark';
 
   const [activeTab, setActiveTab] = useState(0);
+  const [isPending, startTransition] = useTransition();
+  const [loadedTabs, setLoadedTabs] = useState<Record<number, boolean>>({ 0: true });
   const scrollRef = useRef<ScrollView>(null);
   const indicatorAnim = useRef(new Animated.Value(0)).current;
 
@@ -32,7 +34,10 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
   // HistoryScreen and StatsScreen manage their own data — no props needed
 
   const switchTab = (idx: number) => {
-    setActiveTab(idx);
+    setLoadedTabs(prev => ({ ...prev, [idx]: true }));
+    startTransition(() => {
+      setActiveTab(idx);
+    });
     Animated.spring(indicatorAnim, {
       toValue: idx,
       damping: 20, stiffness: 200, mass: 0.7, useNativeDriver: true,
@@ -43,7 +48,10 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
   const onScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (idx !== activeTab) {
-      setActiveTab(idx);
+      setLoadedTabs(prev => ({ ...prev, [idx]: true }));
+      startTransition(() => {
+        setActiveTab(idx);
+      });
       Animated.spring(indicatorAnim, {
         toValue: idx, damping: 20, stiffness: 200, useNativeDriver: true,
       }).start();
@@ -109,12 +117,12 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
       >
         {/* Tab 0: Journal (HistoryScreen) */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <HistoryScreen />
+          {loadedTabs[0] ? <HistoryScreen /> : <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }} />}
         </View>
 
         {/* Tab 1: Analytics (StatsScreen) */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <StatsScreen />
+          {loadedTabs[1] ? <StatsScreen /> : <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }} />}
         </View>
       </ScrollView>
     </View>

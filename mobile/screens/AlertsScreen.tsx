@@ -11,7 +11,7 @@ import { Music, Upload, Check, Play, Pause } from 'lucide-react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function AlertsScreen({ onBack }: { onBack?: () => void }) {
+const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -458,12 +458,22 @@ export default function AlertsScreen({ onBack }: { onBack?: () => void }) {
                         </View>
                      </View>
 
-                     <View style={{ marginBottom: 12, alignItems: 'center' }}>
+                     <TouchableOpacity 
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (currentPrice) {
+                            Haptics.selectionAsync();
+                            setTargetPrice(currentPrice.toString());
+                          }
+                        }}
+                        style={{ marginBottom: 12, alignItems: 'center', backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)', paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.15)' }}
+                      >
                         <Text style={[lbl, { color: isDark ? '#6366f1' : '#4f46e5', marginBottom: 2 }]}>Live Execution Price</Text>
                         <Text style={{ fontSize: 24, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>
                            {currentPrice ? `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Connecting...'}
                         </Text>
-                     </View>
+                        <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#64748b', marginTop: 4 }}>TAP TO USE AS TARGET</Text>
+                     </TouchableOpacity>
 
                      <Text style={lbl}>Target Execution Price</Text>
                      <TextInput style={[inp, { fontSize: 28, fontWeight: '900', paddingVertical: 20, textAlign: 'center' }]} value={targetPrice} onChangeText={setTargetPrice} placeholder="0.00000" placeholderTextColor={isDark ? '#1e293b' : '#cbd5e1'} keyboardType="numeric" />
@@ -635,4 +645,6 @@ export default function AlertsScreen({ onBack }: { onBack?: () => void }) {
       </Modal>
     </View>
   );
-}
+});
+
+export default AlertsScreen;

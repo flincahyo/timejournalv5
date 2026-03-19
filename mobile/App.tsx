@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useTransition, startTransition } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   View, ScrollView, Dimensions, Text, TouchableOpacity,
-  BackHandler, ToastAndroid, Animated, Easing, Platform, UIManager
+  BackHandler, ToastAndroid, Animated, Easing, Platform, UIManager,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -25,8 +25,10 @@ import TrackerScreen from './screens/TrackerScreen';
 import PortfolioScreen from './screens/PortfolioScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
+import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePushNotifications } from './hooks/usePushNotifications';
+import { useMT5Sync } from './hooks/useMT5Sync';
 import { API_URL } from './Constants';
 
 SplashScreen.preventAutoHideAsync();
@@ -54,13 +56,13 @@ const TABS = [
 const DEFAULT_TAB = 1;
 
 // ── Top Navigation Bar — flat individual tabs ────────────────────────────────
-function TopNavBar({
+const TopNavBar = React.memo(({
   activeTab, onTabPress, isDark,
 }: {
   activeTab: number;
   onTabPress: (i: number) => void;
   isDark: boolean;
-}) {
+}) => {
   return (
     <View style={{
       flexDirection: 'row',
@@ -110,7 +112,7 @@ function TopNavBar({
       })}
     </View>
   );
-}
+});
 
 // ── Portfolio ref for jumping to Settings ─────────────────────────────────────
 function MainApp() {
@@ -119,6 +121,9 @@ function MainApp() {
   const isDark = colorScheme === 'dark';
 
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
+  const [isPending, startTransitionLocal] = useTransition();
+  const [loadedTabs, setLoadedTabs] = useState<Record<number, boolean>>({ [DEFAULT_TAB]: true });
+  const [authLoaded, setAuthLoaded] = useState<Record<string, boolean>>({ login: true });
   const scrollRef = useRef<ScrollView>(null);
   // scrollX drives the pill indicator natively — no JS-thread delay
   const scrollX = useRef(new Animated.Value(DEFAULT_TAB * SCREEN_WIDTH)).current;
@@ -129,6 +134,64 @@ function MainApp() {
   const [portfolioInitialTab, setPortfolioInitialTab] = useState(0);
   // Shared user state — single source of truth for both Home + Settings
   const [sharedUser, setSharedUser] = useState<any>(null);
+
+  // Notification Center
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notifSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const { trades: notifTrades } = useMT5Sync();
+
+  const prevTradesCountRef = useRef<number>(-1); // -1 = not yet initialised
+
+  // Detect new trades and instantly light up the dot
+  useEffect(() => {
+    if (notifTrades.length === 0) return;
+
+    const prev = prevTradesCountRef.current;
+
+    if (prev === -1) {
+      // First load: compare timestamps against last-opened to restore badge on restart
+      (async () => {
+        const lastOpened = await AsyncStorage.getItem('notif_last_opened');
+        const lastTs = lastOpened ? new Date(lastOpened).getTime() : 0;
+        const newCount = notifTrades.filter(t => {
+          const ds = t.closeTime || t.openTime || '';
+          if (!ds) return false;
+          try {
+            const normalized = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
+            return new Date(normalized).getTime() > lastTs;
+          } catch { return false; }
+        }).length;
+        setUnreadCount(Math.min(newCount, 20));
+        prevTradesCountRef.current = notifTrades.length;
+      })();
+    } else if (notifTrades.length > prev) {
+      // New trades arrived — increment immediately, no async lookup needed
+      setUnreadCount(c => Math.min(c + (notifTrades.length - prev), 20));
+      prevTradesCountRef.current = notifTrades.length;
+    } else {
+      prevTradesCountRef.current = notifTrades.length;
+    }
+  }, [notifTrades]);
+
+  const openNotifications = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Slide in
+    Animated.spring(notifSlide, {
+      toValue: 0, damping: 22, stiffness: 200, useNativeDriver: true,
+    }).start();
+    setShowNotifications(true);
+    // Mark as read
+    AsyncStorage.setItem('notif_last_opened', new Date().toISOString());
+    setUnreadCount(0);
+  }, [notifSlide]);
+
+  const closeNotifications = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(notifSlide, {
+      toValue: SCREEN_WIDTH, damping: 22, stiffness: 200, useNativeDriver: true,
+    }).start(() => setShowNotifications(false));
+  }, [notifSlide]);
 
   usePushNotifications();
 
@@ -156,9 +219,12 @@ function MainApp() {
       await AsyncStorage.setItem('logged_out', 'true');
       setUserToken(null);
       // Reset tab state on logout
-      setActiveTab(DEFAULT_TAB);
-      setPortfolioInitialTab(0);
-      scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
+      startTransition(() => {
+        setActiveTab(DEFAULT_TAB);
+        setPortfolioInitialTab(0);
+        scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
+        setLoadedTabs({ [DEFAULT_TAB]: true });
+      });
       setSharedUser(null);
     } catch (e) { console.error(e); }
   }, []);
@@ -185,18 +251,29 @@ function MainApp() {
   const navigateTo = useCallback((index: number, portfolioTab?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (portfolioTab !== undefined) setPortfolioInitialTab(portfolioTab);
-    // Pill: instant visual feedback via scrollX (no re-render needed)
+    
+    // 1. Mark tab as loaded immediately so it can start mounting
+    setLoadedTabs(prev => ({ ...prev, [index]: true }));
+
+    // 2. Pill and Scroll: instant visual feedback (no re-render needed)
     scrollX.setValue(index * SCREEN_WIDTH);
-    // Content: instant switch — same feel as completing a swipe
     scrollRef.current?.scrollTo({ x: index * SCREEN_WIDTH, animated: false });
-    // Defer activeTab state update to AFTER scroll so setActiveTab re-render
+
+    // 3. Defer activeTab state update to AFTER scroll so setActiveTab re-render
     // doesn't block the scroll/content switch on the JS thread
-    setActiveTab(index);
+    startTransitionLocal(() => {
+      setActiveTab(index);
+    });
   }, [scrollX]);
 
   const handleScrollEnd = useCallback((e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-    if (idx !== activeTab && idx >= 0 && idx < TABS.length) setActiveTab(idx);
+    if (idx !== activeTab && idx >= 0 && idx < TABS.length) {
+      setLoadedTabs(prev => ({ ...prev, [idx]: true }));
+      startTransitionLocal(() => {
+        setActiveTab(idx);
+      });
+    }
   }, [activeTab]);
 
   // Navigate to Settings (Portfolio tab, Settings sub-tab)
@@ -211,9 +288,10 @@ function MainApp() {
   }, [navigateTo]);
 
   const handleHomeNavigate = useCallback((id: string) => {
+    if (id === 'notifications') { openNotifications(); return; }
     const idx = TABS.findIndex(t => t.id === id);
     if (idx >= 0) navigateTo(idx);
-  }, [navigateTo]);
+  }, [navigateTo, openNotifications]);
 
   const handleTabPress = useCallback((i: number) => navigateTo(i), [navigateTo]);
 
@@ -250,10 +328,10 @@ function MainApp() {
       <View style={{ flex: 1, backgroundColor: isDark ? '#12101f' : '#6366f1', overflow: 'hidden' }}>
         <Reanimated.View style={[{ flexDirection: 'row', width: SCREEN_WIDTH * 2, flex: 1 }, authStyle]}>
           <View style={{ width: SCREEN_WIDTH }}>
-            <LoginScreen onLoginSuccess={() => checkToken()} onRegister={() => setIsRegistering(true)} />
+            {authLoaded['login'] ? <LoginScreen onLoginSuccess={() => checkToken()} onRegister={() => { setAuthLoaded(p => ({ ...p, signup: true })); setIsRegistering(true); }} /> : null}
           </View>
           <View style={{ width: SCREEN_WIDTH }}>
-            <SignupScreen onBack={() => setIsRegistering(false)} onRegisterSuccess={() => checkToken()} />
+            {authLoaded['signup'] ? <SignupScreen onBack={() => setIsRegistering(false)} onRegisterSuccess={() => checkToken()} /> : null}
           </View>
         </Reanimated.View>
       </View>
@@ -297,27 +375,49 @@ function MainApp() {
         >
         {/* Tab 0: Tracker */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <TrackerScreen onNavigate={handleTrackerNavigate} />
+          {loadedTabs[0] ? <TrackerScreen onNavigate={handleTrackerNavigate} /> : <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }} />}
         </View>
 
         {/* Tab 1: Home */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <HomeScreen
-            onNavigate={handleHomeNavigate}
-            onOpenSettings={openSettings}
-            user={sharedUser}
-          />
+          {loadedTabs[1] ? (
+            <HomeScreen
+              onNavigate={handleHomeNavigate}
+              onOpenSettings={openSettings}
+              user={sharedUser}
+              unreadNotifications={unreadCount}
+            />
+          ) : (
+            <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }} />
+          )}
         </View>
 
         {/* Tab 2: Portfolio */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <PortfolioScreen
-            onLogout={handleLogout}
-            initialTab={portfolioInitialTab}
-            onUserUpdated={handleUserUpdated}
-          />
+          {loadedTabs[2] ? (
+            <PortfolioScreen
+              onLogout={handleLogout}
+              initialTab={portfolioInitialTab}
+              onUserUpdated={handleUserUpdated}
+            />
+          ) : (
+            <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }} />
+          )}
         </View>
         </Animated.ScrollView>
+
+      {/* ── Notification Center Overlay ──────────────────────────────────── */}
+      {showNotifications && (
+        <Animated.View style={[
+          { position: 'absolute', inset: 0, zIndex: 100 },
+          { transform: [{ translateX: notifSlide }] }
+        ]}>
+          <NotificationCenterScreen
+            trades={notifTrades}
+            onClose={closeNotifications}
+          />
+        </Animated.View>
+      )}
       </View>
     </View>
   );

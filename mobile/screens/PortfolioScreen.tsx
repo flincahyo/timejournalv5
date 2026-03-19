@@ -1,21 +1,58 @@
-import React, { useState, useRef, startTransition } from 'react';
+import React, { useState, useRef, useTransition, useCallback, startTransition } from 'react';
 import {
   View, Text, TouchableOpacity, Animated, Dimensions, ScrollView, Modal, Image, 
-  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput
+  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput, Switch
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../Constants';
-import { 
-  Mail, Lock, Shield, Link2, BarChart2, Moon, Sun, Bell, LogOut, 
-  ChevronRight, X, Camera, Save 
-} from 'lucide-react-native';
+import { API_URL, BACKEND_URL } from '../Constants';
+import { Zap, LogOut, ChevronRight, CheckCircle, ShieldCheck, CreditCard, PieChart, Activity, Bell, Info, Shield, Moon, Sun, Monitor, AlertTriangle, Check, Upload, Music, X, Send, Mail, Lock, Link2, BarChart2, Camera, Save } from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import MT5SettingsScreen from './MT5SettingsScreen';
 import TerminalScreen from './TerminalScreen';
 import AlertsScreen from './AlertsScreen';
 import EconomicCalendarScreen from './EconomicCalendarScreen';
 import { AvatarPickerModal } from '../components/AvatarPickerModal';
+import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
+
+// ── Portfolio Tab Skeleton ─────────────────────────────────────────────────────
+function PortfolioTabSkeleton({ isDark }: { isDark: boolean }) {
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}
+      contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Avatar header */}
+      <View style={{ alignItems: 'center', paddingTop: 24, paddingBottom: 28 }}>
+        <SkeletonCircle size={80} isDark={isDark} style={{ marginBottom: 14 }} />
+        <SkeletonRect width={140} height={16} isDark={isDark} style={{ marginBottom: 8 }} />
+        <SkeletonRect width={100} height={10} isDark={isDark} />
+      </View>
+
+      {/* Section rows */}
+      {[1, 2, 3].map(s => (
+        <View key={s} style={{
+          backgroundColor: isDark ? '#13161f' : '#ffffff',
+          borderRadius: 20, padding: 16, marginBottom: 20,
+          borderWidth: 1, borderColor: isDark ? '#1e293b' : '#e8edf5',
+        }}>
+          <SkeletonRect width={80} height={8} isDark={isDark} style={{ marginBottom: 14 }} />
+          {[1, 2].map(r => (
+            <View key={r} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 }}>
+              <SkeletonCircle size={32} isDark={isDark} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <SkeletonRect width={60} height={8} isDark={isDark} />
+                <SkeletonRect width={120} height={12} isDark={isDark} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,10 +73,12 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
   initialTab?: number,
   onUserUpdated?: (patch: Partial<any>) => void,
 }) => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, toggleColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [isPending, startTransition] = useTransition();
+  const [loadedTabs, setLoadedTabs] = useState<Record<number, boolean>>({ [initialTab]: true });
   const scrollRef = useRef<ScrollView>(null);
   const indicatorAnim = useRef(new Animated.Value(initialTab)).current;
   
@@ -48,6 +87,7 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [defaultPriceSound, setDefaultPriceSound] = useState('default');
   const [defaultMomentumSound, setDefaultMomentumSound] = useState('momentum');
+  const [defaultNewsSound, setDefaultNewsSound] = useState('default');
   const [availableSounds, setAvailableSounds] = useState<any[]>([
     { id: 'default', name: 'Default Signal', url: null },
     { id: 'classic', name: 'Classic Ping', url: null },
@@ -59,20 +99,49 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
     const load = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const res = await fetch(`${API_URL}/auth/sounds`, { headers: { Authorization: `Bearer ${token}` } });
-        const data = await res.json();
-        if (data.custom_sounds) {
+        
+        // Load custom sounds list
+        const resSounds = await fetch(`${API_URL}/auth/sounds`, { headers: { Authorization: `Bearer ${token}` } });
+        const dataSounds = await resSounds.json();
+        if (dataSounds.custom_sounds) {
           setAvailableSounds([
             { id: 'default', name: 'Default Signal', url: null },
             { id: 'classic', name: 'Classic Ping', url: null },
             { id: 'momentum', name: 'Momentum Boom', url: null },
-            ...data.custom_sounds
+            ...dataSounds.custom_sounds
           ]);
+        }
+
+        // Load persisted audio/news settings
+        const resMe = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+        const dataMe = await resMe.json();
+        if (dataMe.settings) {
+          const s = dataMe.settings;
+          if (s.audio_settings) {
+            if (s.audio_settings.price_sound) setDefaultPriceSound(s.audio_settings.price_sound);
+            if (s.audio_settings.momentum_sound) setDefaultMomentumSound(s.audio_settings.momentum_sound);
+          }
+          if (s.news_settings) {
+            setNotifEnabled(s.news_settings.enabled ?? true);
+            if (s.news_settings.sound) setDefaultNewsSound(s.news_settings.sound);
+          }
         }
       } catch (_) {}
     };
     load();
   }, [isNotifModalVisible]);
+
+  const saveSettings = async (type: 'audio' | 'news', patch: any) => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const endpoint = type === 'audio' ? '/api/auth/audio-settings' : '/api/auth/news-settings';
+      await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(patch)
+      });
+    } catch (e) { console.error("Error saving settings:", e); }
+  };
 
   // Scroll to initialTab on mount if needed
   React.useEffect(() => {
@@ -82,7 +151,10 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
   }, []);
 
   const switchTab = (idx: number) => {
-    setActiveTab(idx);
+    startTransition(() => {
+      setActiveTab(idx);
+      setLoadedTabs(prev => ({ ...prev, [idx]: true }));
+    });
     Animated.spring(indicatorAnim, {
       toValue: idx, damping: 20, stiffness: 200, mass: 0.7, useNativeDriver: true,
     }).start();
@@ -92,12 +164,19 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
   const onScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (idx !== activeTab) {
-      setActiveTab(idx);
+      startTransition(() => {
+        setActiveTab(idx);
+        setLoadedTabs(prev => ({ ...prev, [idx]: true }));
+      });
       Animated.spring(indicatorAnim, {
         toValue: idx, damping: 20, stiffness: 200, useNativeDriver: true,
       }).start();
     }
   };
+
+  const handleAlertsBack = useCallback(() => {
+    Haptics.selectionAsync();
+  }, []);
 
   const tabWidth = (SCREEN_WIDTH - 32) / SUB_TABS.length;
 
@@ -156,29 +235,33 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
         bounces={false}
         style={{ flex: 1 }}
       >
-        {/* Terminal */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <TerminalScreen />
+        {/* Tab 0: Terminal */}
+        <View style={{ width: SCREEN_WIDTH }}>
+          {loadedTabs[0] ? <TerminalScreen /> : <PortfolioTabSkeleton isDark={isDark} />}
         </View>
 
-        {/* Alerts */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <AlertsScreen onBack={() => {}} />
+        {/* Tab 1: Alerts */}
+        <View style={{ width: SCREEN_WIDTH }}>
+          {loadedTabs[1] ? <AlertsScreen onBack={handleAlertsBack} /> : <PortfolioTabSkeleton isDark={isDark} />}
         </View>
 
-        {/* Economic Calendar */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <EconomicCalendarScreen />
+        {/* Tab 2: News (Economic Calendar) */}
+        <View style={{ width: SCREEN_WIDTH }}>
+          {loadedTabs[2] ? <EconomicCalendarScreen /> : <PortfolioTabSkeleton isDark={isDark} />}
         </View>
 
-        {/* Settings (Profile + MT5 Settings) */}
-        <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          <FlatSettingsPage 
-            onLogout={onLogout} 
-            isDark={isDark} 
-            onUserUpdated={onUserUpdated}
-            onOpenNotifs={() => setNotifModalVisible(true)}
-          />
+        {/* Tab 3: Settings */}
+        <View style={{ width: SCREEN_WIDTH }}>
+          {loadedTabs[3] ? (
+            <FlatSettingsPage 
+              isDark={isDark} 
+              onLogout={onLogout} 
+              onUserUpdated={onUserUpdated || (() => {})} 
+              onOpenNotifs={() => setNotifModalVisible(true)}
+            />
+          ) : (
+            <PortfolioTabSkeleton isDark={isDark} />
+          )}
         </View>
       </ScrollView>
 
@@ -187,11 +270,13 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
         onClose={() => setNotifModalVisible(false)}
         isDark={isDark}
         enabled={notifEnabled}
-        setEnabled={setNotifEnabled}
+        setEnabled={(val: boolean) => { setNotifEnabled(val); saveSettings('news', { enabled: val }); }}
         priceSound={defaultPriceSound}
-        setPriceSound={setDefaultPriceSound}
+        setPriceSound={(id: string) => { setDefaultPriceSound(id); saveSettings('audio', { price_sound: id }); }}
         momentumSound={defaultMomentumSound}
-        setMomentumSound={setDefaultMomentumSound}
+        setMomentumSound={(id: string) => { setDefaultMomentumSound(id); saveSettings('audio', { momentum_sound: id }); }}
+        newsSound={defaultNewsSound}
+        setNewsSound={(id: string) => { setDefaultNewsSound(id); saveSettings('news', { sound: id }); }}
         availableSounds={availableSounds}
         setAvailableSounds={setAvailableSounds}
       />
@@ -200,7 +285,7 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
 });
 
 // ── Flat Settings Page ─────────────────────────────────────────────────────────
-function FlatSettingsPage({ 
+const FlatSettingsPage = React.memo(function FlatSettingsPage({ 
   onLogout, 
   isDark, 
   onUserUpdated,
@@ -432,7 +517,7 @@ function FlatSettingsPage({
           <Text style={{ fontSize: 9, fontWeight: '900', color: textM, letterSpacing: 1.5, marginBottom: 8, paddingHorizontal: 4 }}>PREFERENCES</Text>
           <View style={{ backgroundColor: card, borderRadius: 20, paddingHorizontal: 16, marginBottom: 28, borderWidth: 1, borderColor: border }}>
             <TouchableOpacity
-              onPress={() => startTransition(() => toggleColorScheme())}
+              onPress={() => startTransition(() => { toggleColorScheme(); })}
               style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}
             >
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
@@ -629,7 +714,7 @@ function FlatSettingsPage({
       />
     </>
   );
-}
+});
 
 export default PortfolioScreen;
 
@@ -637,6 +722,7 @@ export default PortfolioScreen;
 function NotificationSettingsModal({ 
   visible, onClose, isDark, enabled, setEnabled, 
   priceSound, setPriceSound, momentumSound, setMomentumSound,
+  newsSound, setNewsSound,
   availableSounds, setAvailableSounds
 }: any) {
   const [uploading, setUploading] = useState(false);
@@ -667,7 +753,25 @@ function NotificationSettingsModal({
     } catch (e) { console.log('Playback error'); }
   };
 
-  const uploadCustom = async () => {
+  const testPushNotification = async () => {
+    import('expo-haptics').then(Haptics => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+    try {
+      const Notifications = await import('expo-notifications');
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Test Signal Detected 🎯",
+          body: "Push notifications are active and working flawlessly on your device.",
+          sound: true,
+        },
+        trigger: null,
+      });
+    } catch (e) {
+      console.warn("Test notification failed:", e);
+      alert("Failed to send test notification. Ensure permissions are granted.");
+    }
+  };
+
+  const uploadToCategory = async (category: 'price' | 'momentum' | 'news') => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
       if (result.canceled) return;
@@ -684,6 +788,12 @@ function NotificationSettingsModal({
       if (data.url) {
         const ns = { id: data.url, name: data.name || file.name, url: data.url };
         setAvailableSounds([...availableSounds, ns]);
+        
+        // Auto-select for the category
+        if (category === 'price') setPriceSound(ns.id);
+        else if (category === 'momentum') setMomentumSound(ns.id);
+        else if (category === 'news') setNewsSound(ns.id);
+        
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (e) { console.error(e); } finally { setUploading(false); }
@@ -716,8 +826,14 @@ function NotificationSettingsModal({
             <Text style={{ fontSize: 10, fontWeight: '900', color: textM, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12, marginLeft: 4 }}>Default Audio Signatures</Text>
             
             <View style={{ gap: 12, marginBottom: 32 }}>
+               {/* Price Alerts */}
                <View style={{ backgroundColor: card, padding: 16, borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: textM, marginBottom: 12 }}>PRICE ALERTS</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: textM }}>PRICE ALERTS</Text>
+                    <TouchableOpacity onPress={() => uploadToCategory('price')} disabled={uploading}>
+                       <Upload size={14} color="#6366f1" />
+                    </TouchableOpacity>
+                  </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                      {availableSounds.map((s: any) => (
                         <TouchableOpacity key={s.id} onPress={() => { setPriceSound(s.id); playPreview(s.url, s.id); }} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: priceSound === s.id ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -728,8 +844,14 @@ function NotificationSettingsModal({
                   </ScrollView>
                </View>
 
+               {/* Momentum Pulse */}
                <View style={{ backgroundColor: card, padding: 16, borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: textM, marginBottom: 12 }}>MOMENTUM PULSE</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: textM }}>MOMENTUM PULSE</Text>
+                    <TouchableOpacity onPress={() => uploadToCategory('momentum')} disabled={uploading}>
+                       <Upload size={14} color="#6366f1" />
+                    </TouchableOpacity>
+                  </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                      {availableSounds.map((s: any) => (
                         <TouchableOpacity key={s.id} onPress={() => { setMomentumSound(s.id); playPreview(s.url, s.id); }} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: momentumSound === s.id ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -739,17 +861,43 @@ function NotificationSettingsModal({
                      ))}
                   </ScrollView>
                </View>
+
+               {/* News Alerts */}
+               <View style={{ backgroundColor: card, padding: 16, borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: textM }}>NEWS ALERT SIGNATURE</Text>
+                    <TouchableOpacity onPress={() => uploadToCategory('news')} disabled={uploading}>
+                       <Upload size={14} color="#6366f1" />
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                     {availableSounds.map((s: any) => (
+                        <TouchableOpacity key={s.id} onPress={() => { setNewsSound(s.id); playPreview(s.url, s.id); }} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: newsSound === s.id ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                           <Music size={12} color={newsSound === s.id ? '#fff' : textM} />
+                           <Text style={{ fontSize: 11, fontWeight: '700', color: newsSound === s.id ? '#fff' : textM }}>{s.name}</Text>
+                        </TouchableOpacity>
+                     ))}
+                  </ScrollView>
+               </View>
             </View>
 
-            <TouchableOpacity onPress={uploadCustom} style={{ backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#f5f7ff', padding: 24, borderRadius: 28, alignItems: 'center', borderStyle: 'dashed', borderWidth: 2, borderColor: '#6366f1' }}>
-               {uploading ? <ActivityIndicator color="#6366f1" /> : (
-                 <>
-                   <Upload size={24} color="#6366f1" style={{ marginBottom: 12 }} />
-                   <Text style={{ color: '#6366f1', fontWeight: '900', fontSize: 14 }}>Upload Custom signature</Text>
-                   <Text style={{ color: textM, fontSize: 11, marginTop: 4 }}>Supports MP3, WAV, M4A</Text>
-                 </>
-               )}
-            </TouchableOpacity>
+            <View style={{ marginBottom: 32 }}>
+               <TouchableOpacity 
+                 onPress={testPushNotification}
+                 style={{ 
+                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                   backgroundColor: '#6366f1', paddingVertical: 16, borderRadius: 20,
+                   shadowColor: '#6366f1', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }
+                 }}
+               >
+                 <Send size={18} color="#fff" />
+                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }}>Send Test Notification</Text>
+               </TouchableOpacity>
+            </View>
+
+            <View style={{ padding: 24, borderRadius: 28, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.3)' : '#f8fafc', alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1' }}>
+               <Text style={{ color: textM, fontSize: 11, textAlign: 'center' }}>Upload custom .mp3 files using the upload icon next to each category title. Each category maintains its own signature sound for instant identification.</Text>
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -757,7 +905,4 @@ function NotificationSettingsModal({
   );
 }
 
-// Add these imports at the top if missing
-import { Switch } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import { Music, Upload } from 'lucide-react-native';
+
