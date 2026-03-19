@@ -399,7 +399,12 @@ app = FastAPI(title="TimeJournal MT5 API v3", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=[
+        "https://timejournal.site",
+        "https://api.timejournal.site",
+        "http://localhost:3000",
+        "http://localhost:8000"
+    ] + os.getenv("ALLOWED_ORIGINS", "").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -746,9 +751,7 @@ async def update_trade_metadata(ticket: str, req: TradeMetadataUpdate, user: Use
 async def health_check():
     return {"status": "ok", "time": datetime.datetime.now(tz=WIB).isoformat()}
 
-@app.get("/api/auth/me")
-async def get_me(user: User = Depends(get_current_user)):
-    return {"id": user.id, "email": user.email, "name": user.name, "image": user.image, "createdAt": user.created_at.isoformat()}
+# Removed duplicate get_me definition (already at 560)
 
 
 # ── MT5 Models ────────────────────────────────────────────────────────────────
@@ -1568,20 +1571,7 @@ async def fire_push(req: FirePushRequest, user: User = Depends(get_current_user)
 
 
 # ── Settings Endpoints ────────────────────────────────────────────────────────
-@app.get("/api/settings")
-async def get_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    s = await db.get(UserSettings, user.id)
-    if not s:
-        return {
-            "theme": "light", 
-            "newsSettings": {"enabled": False, "currencies": ["USD"], "impacts": ["High"], "minutesBefore": 5},
-            "terminalLayout": None
-        }
-    return {
-        "theme": s.theme, 
-        "newsSettings": s.news_settings,
-        "terminalLayout": s.terminal_layout
-    }
+# Removed duplicate get_settings definition (already at 678)
 
 
 class SettingsUpdateRequest(BaseModel):

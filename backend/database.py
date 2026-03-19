@@ -153,6 +153,17 @@ class UserSettings(Base):
 
     user: Mapped["User"] = relationship(back_populates="settings")
 
+    def to_dict(self):
+        return {
+            "theme": self.theme,
+            "newsSettings": self.news_settings,
+            "recap_settings": self.recap_settings,
+            "audioSettings": self.audio_settings,
+            "terminalLayout": self.terminal_layout,
+            "expo_push_token": self.expo_push_token,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+        }
+
 
 class PublicShare(Base):
     __tablename__ = "public_shares"
