@@ -8,6 +8,7 @@ import { API_URL } from '../Constants';
 import { useWebSocket } from '../hooks/useWebSocket';
 import * as DocumentPicker from 'expo-document-picker';
 import { Music, Upload, Check, Play, Pause } from 'lucide-react-native';
+import { SkeletonRect, SkeletonCircle } from '../components/Skeleton';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -354,7 +355,25 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
             </Text>
 
             {loading ? (
-              <ActivityIndicator color="#6366f1" style={{ marginTop: 20 }} />
+              <View style={{ gap: 16 }}>
+                {[1, 2, 3].map(i => (
+                  <View key={i} style={{ backgroundColor: isDark ? 'rgba(30, 41, 59, 0.2)' : '#ffffff', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: isDark ? 'rgba(51, 65, 85, 0.4)' : '#f1f5f9' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                        <SkeletonRect width={48} height={48} borderRadius={16} isDark={isDark} />
+                        <View style={{ gap: 6 }}>
+                           <SkeletonRect width={80} height={16} isDark={isDark} />
+                           <SkeletonRect width={120} height={12} isDark={isDark} />
+                        </View>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                         <SkeletonRect width={40} height={20} borderRadius={10} isDark={isDark} />
+                         <SkeletonRect width={36} height={36} borderRadius={12} isDark={isDark} />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
             ) : alerts.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', opacity: 0.5 }}>
                  <Bell size={48} color={isDark ? '#334155' : '#cbd5e1'} />

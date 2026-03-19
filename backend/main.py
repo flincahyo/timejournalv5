@@ -107,12 +107,15 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
     if not token or not token.startswith("ExponentPushToken"):
         return
     
-    # If sound is a URL (custom upload), Expo might not play it directly as a system sound
-    # unless it's bundled. But we set it in 'sound' field for Expo to try,
-    # and also in 'data' for the app to play when in foreground.
+    # Normalize sound: if it's a URL, use 'default' for system, but pass URL in data
+    # If it's a known preset, pass it directly.
+    expo_sound = "default"
+    if sound and not sound.startswith("http") and sound != "none":
+        expo_sound = "default" # Expo Go/Bare usually only supports 'default' unless bundled
+    
     message = {
         "to": token,
-        "sound": sound if sound and not sound.startswith("http") else "default",
+        "sound": expo_sound,
         "title": title,
         "body": body,
         "data": {**(data or {}), "sound": sound},
@@ -129,6 +132,7 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
             print(f"DEBUG PUSH: Sent notification to {token}: {response.json()}")
     except Exception as e:
         print(f"DEBUG PUSH: Error sending push notification: {e}")
+
 
 
 async def sync_trade_to_journal(user_id: str, trade_data: dict, db: AsyncSession):
@@ -545,21 +549,29 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Email atau password salah")
 
     token = create_access_token({"sub": user.id})
+    # Get user settings
+    settings_res = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = settings_res.scalar_one_or_none()
+    
     return {
         "token": token,
         "user": {"id": user.id, "email": user.email, "name": user.name, "image": user.image, "createdAt": user.created_at.isoformat()},
+        "settings": settings.to_dict() if settings else None
     }
 
 
 
 @app.get("/api/auth/me")
-async def get_me(user: User = Depends(get_current_user)):
+async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    settings_res = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = settings_res.scalar_one_or_none()
     return {
         "id": user.id,
         "email": user.email,
         "name": user.name,
         "image": user.image,
         "createdAt": user.created_at.isoformat(),
+        "settings": settings.to_dict() if settings else None
     }
 
 
@@ -1642,6 +1654,49 @@ async def get_news():
     return _news_cache
 
 
+@app.get("/api/auth/news-settings")
+async def get_news_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = result.scalar_one_or_none()
+    if not settings:
+        return {"enabled": False, "minutesBefore": 5, "sound": "default", "selectedEvents": [], "autoHighImpact": False}
+    return settings.news_settings
+
+
+@app.put("/api/auth/news-settings")
+async def update_news_settings(new_settings: dict, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = result.scalar_one_or_none()
+    if not settings:
+        settings = UserSettings(user_id=user.id)
+        db.add(settings)
+    
+    # Merge existing or set new
+    current = settings.news_settings or {}
+    current.update(new_settings)
+    settings.news_settings = current
+    flag_modified(settings, "news_settings")
+    await db.commit()
+    return current
+
+
+@app.put("/api/auth/audio-settings")
+async def update_audio_settings(new_settings: dict, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    settings = result.scalar_one_or_none()
+    if not settings:
+        settings = UserSettings(user_id=user.id)
+        db.add(settings)
+    
+    # Merge existing or set new
+    current = settings.audio_settings or {}
+    current.update(new_settings)
+    settings.audio_settings = current
+    flag_modified(settings, "audio_settings")
+    await db.commit()
+    return current
+
+
 # ── Alert Evaluator Background Loop ──────────────────────────────────────────
 async def _alert_evaluator_loop():
     """Runs every 5 seconds. Evaluates alerts against cached prices and sends push notifications."""
@@ -1725,9 +1780,17 @@ async def _alert_evaluator_loop():
                                     wick = (high_val - low_val) - body_size
                                     wick_pct = (wick / (high_val - low_val) * 100) if (high_val - low_val) > 0 else 100
                                     
-                                    # Calculate pips
-                                    pip_size = 0.01 if "JPY" in symbol.upper() else 0.0001
-                                    if any(x in symbol.upper() for x in ["XAU", "GOLD"]): pip_size = 0.1
+                                    # Calculate pips - ALIGNED WITH FRONTEND
+                                    s_up = symbol.upper()
+                                    pip_size = 0.0001
+                                    if "JPY" in s_up: pip_size = 0.01
+                                    elif any(x in s_up for x in ["XAU", "GOLD"]): pip_size = 0.1
+                                    elif any(x in s_up for x in ["XAG", "SILVER"]): pip_size = 0.01
+                                    elif any(x in s_up for x in ["BTC", "BITCOIN"]): pip_size = 1.0
+                                    elif any(x in s_up for x in ["ETH", "ETHEREUM"]): pip_size = 0.1
+                                    elif any(x in s_up for x in ["NAS", "US100", "DOW", "US30", "GER", "DAX"]): pip_size = 1.0
+                                    elif any(x in s_up for x in ["SPX", "US500"]): pip_size = 0.1
+                                    
                                     body_pips = body_size / pip_size
                                     
                                     min_body = alert.get("minBodyPips", 0)
@@ -1738,6 +1801,7 @@ async def _alert_evaluator_loop():
                                         triggered = True
                                         title = f"🚨 {symbol} {tf} Momentum!"
                                         body = f"{direction} candle with {body_pips:.1f} pips body and {wick_pct:.0f}% wick!"
+                                        print(f"🔔 DEBUG ALERT: Momentum triggered for {symbol} {tf}: {body_pips:.1f} pips")
                             
                             if triggered:
                                 _alert_notified[alert_id] = now
@@ -1839,49 +1903,62 @@ async def _news_evaluator_loop():
                             continue
                         
                         settings = user.settings.news_settings or {}
-                        if not settings.get("enabled", False):
+                        # User must have news alerts enabled globally
+                        if not settings.get("enabled", True): 
                             continue
                             
                         push_token = user.settings.expo_push_token
-                        currencies = settings.get("currencies", [])
-                        impacts = settings.get("impacts", [])
+                        selected_events = settings.get("selectedEvents", [])
+                        auto_high_impact = settings.get("autoHighImpact", False)
                         minutes_before = settings.get("minutesBefore", 5)
+                        news_sound = settings.get("sound", "default")
                         
                         threshold_dt = now_dt + datetime.timedelta(minutes=minutes_before)
                         
                         for ev in _news_cache:
-                            country = ev.get("country", "")
                             impact = ev.get("impact", "")
-                            
-                            if country not in currencies or impact not in impacts:
-                                continue
-                                
+                            title = ev.get("title", "Berita Ekonomi")
                             ev_date_str = ev.get("date", "")
+                            country = ev.get("country", "")
+                            
                             if not ev_date_str: continue
                             
+                            # Unique key for this specific news event
+                            ev_key = f"{title}_{country}_{ev_date_str}"
+                            
+                            # Check if user wants this alert
+                            is_selected = ev_key in selected_events
+                            is_auto_high = auto_high_impact and impact == "High"
+                            
+                            if not (is_selected or is_auto_high):
+                                continue
+                                
                             try:
-                                # Forexfactory API returns ISO-like strings, usually parseable
                                 ev_dt = datetime.datetime.fromisoformat(ev_date_str.replace("Z", "+00:00"))
                                 if ev_dt.tzinfo is None:
                                     ev_dt = ev_dt.replace(tzinfo=datetime.timezone.utc)
                             except:
                                 continue
                             
-                            # If event is within the timeframe window
+                            # If event is within the lead time window
+                            # Also check that it hasn't passed yet
                             if now_dt < ev_dt <= threshold_dt:
-                                title = ev.get("title", "Berita Ekonomi")
-                                ev_id = f"{user.id}_{title}_{ev_date_str}"
+                                # Track notification per user + event
+                                notify_id = f"{user.id}_{ev_key}"
                                 
-                                if ev_id not in _news_notified:
-                                    _news_notified.add(ev_id)
+                                if notify_id not in _news_notified:
+                                    _news_notified.add(notify_id)
                                     forecast = ev.get("forecast", "-")
                                     prev = ev.get("previous", "-")
                                     
+                                    impact_emoji = "🔴" if impact == "High" else ("🟠" if impact == "Medium" else "⚪")
+                                    
                                     await send_expo_push_notification(
                                         push_token,
-                                        f"📰 {country} {impact} Impact",
+                                        f"{impact_emoji} {country} News Soon",
                                         f"{title} rilis dalam {minutes_before} menit.\nForecast: {forecast} | Prev: {prev}",
-                                        {"type": "news", "country": country, "impact": impact}
+                                        {"type": "news", "eventKey": ev_key},
+                                        sound=news_sound
                                     )
                                     
         except asyncio.CancelledError:

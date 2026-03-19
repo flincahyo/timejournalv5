@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { BACKEND_URL, WS_URL, API_URL } from '../Constants';
+import { SkeletonRect, SkeletonCircle } from '../components/Skeleton';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -521,10 +522,23 @@ const TerminalScreen = React.memo(function TerminalScreen({ onNavigate }: { onNa
           </View>
 
           {!connected && liveTrades.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 50, gap: 12 }}>
-              <WifiOff size={36} color={isDark ? '#334155' : '#cbd5e1'} />
-              <Text style={{ fontSize: 14, fontWeight: '900', color: isDark ? '#64748b' : '#94a3b8' }}>Connecting to MT5 Bridge</Text>
-              <ActivityIndicator color="#6366f1" />
+            <View style={{ gap: 12 }}>
+              {[1, 2, 3].map(i => (
+                <View key={i} style={{ backgroundColor: isDark ? 'rgba(15,23,42,0.8)' : '#ffffff', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: isDark ? 'rgba(30,41,59,0.8)' : '#f1f5f9' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                      <SkeletonRect width={40} height={20} borderRadius={8} isDark={isDark} />
+                      <SkeletonRect width={70} height={20} isDark={isDark} />
+                    </View>
+                    <SkeletonRect width={60} height={24} isDark={isDark} />
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(30,41,59,0.8)' : '#f1f5f9' }}>
+                    <SkeletonRect width={50} height={24} isDark={isDark} />
+                    <SkeletonRect width={60} height={24} isDark={isDark} />
+                    <SkeletonRect width={80} height={24} isDark={isDark} />
+                  </View>
+                </View>
+              ))}
             </View>
           ) : liveTrades.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 50, gap: 12 }}>
@@ -552,8 +566,23 @@ const TerminalScreen = React.memo(function TerminalScreen({ onNavigate }: { onNa
           </Text>
 
           {newsLoading ? (
-            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-              <ActivityIndicator color="#6366f1" />
+            <View style={{ gap: 10 }}>
+              {[1, 2, 3].map(i => (
+                <View key={i} style={{ backgroundColor: isDark ? 'rgba(15,23,42,0.7)' : '#ffffff', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9', flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+                   <View style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: isDark ? '#1e293b' : '#e2e8f0' }} />
+                   <View style={{ flex: 1, gap: 10 }}>
+                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <SkeletonRect width="70%" height={16} isDark={isDark} />
+                        <SkeletonRect width={40} height={16} borderRadius={8} isDark={isDark} />
+                     </View>
+                     <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <SkeletonRect width={20} height={12} isDark={isDark} />
+                        <SkeletonRect width={60} height={12} isDark={isDark} />
+                        <SkeletonRect width={50} height={12} isDark={isDark} />
+                     </View>
+                   </View>
+                </View>
+              ))}
             </View>
           ) : news.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 50, gap: 12 }}>

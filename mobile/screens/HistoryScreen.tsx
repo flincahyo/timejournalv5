@@ -476,8 +476,8 @@ const HistoryScreen = React.memo(() => {
   });
   
   const [search, setSearch] = useState('');
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [startDate, setStartDate] = useState<Date | null>(new Date());
+  const [endDate, setEndDate] = useState<Date | null>(new Date());
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false); // For manual journal entry
   const [isEditing, setIsEditing] = useState(false); // For manual journal entry

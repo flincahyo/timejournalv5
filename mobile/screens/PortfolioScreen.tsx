@@ -178,7 +178,7 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
     Haptics.selectionAsync();
   }, []);
 
-  const tabWidth = (SCREEN_WIDTH - 32) / SUB_TABS.length;
+  const tabWidth = (SCREEN_WIDTH - 40) / SUB_TABS.length;
 
   const indicatorX = indicatorAnim.interpolate({
     inputRange: SUB_TABS.map((_, i) => i),
@@ -189,17 +189,17 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
     <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }}>
       {/* ── Sub-Tab Bar ──────────────────────────────────────────────────────── */}
       <View style={{
-        paddingHorizontal: 16, paddingTop: 10, paddingBottom: 0,
+        paddingHorizontal: 20, paddingTop: 16, paddingBottom: 0,
         backgroundColor: isDark ? C.bg.dark : C.bg.light,
       }}>
-        <Text style={{ fontSize: 22, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, letterSpacing: -0.5, marginBottom: 8, paddingHorizontal: 4 }}>Portfolio</Text>
+        <Text style={{ fontSize: 22, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, letterSpacing: -0.5, marginBottom: 16 }}>Portfolio</Text>
 
         <View style={{ position: 'relative' }}>
           <View style={{ flexDirection: 'row' }}>
             {SUB_TABS.map((tab, idx) => (
               <TouchableOpacity
                 key={tab} onPress={() => switchTab(idx)} activeOpacity={0.7}
-                style={{ width: tabWidth, paddingBottom: 8, alignItems: 'center' }}
+                style={{ width: tabWidth, paddingBottom: 12, alignItems: 'center' }}
               >
                 <Text style={{
                   fontSize: 12, fontWeight: activeTab === idx ? '900' : '600',
@@ -216,8 +216,8 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
           <View style={{ height: 2, backgroundColor: isDark ? C.border.dark : C.border.light, borderRadius: 1 }}>
             <Animated.View
               style={{
-                height: 2, width: tabWidth - 16, borderRadius: 1,
-                backgroundColor: C.accent, marginHorizontal: 8,
+                height: 2, width: tabWidth - 24, borderRadius: 1,
+                backgroundColor: C.accent, marginHorizontal: 12,
                 transform: [{ translateX: indicatorX }],
               }}
             />

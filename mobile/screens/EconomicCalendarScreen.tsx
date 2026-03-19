@@ -9,6 +9,7 @@ import { AILoadingAnimation } from '../components/AILoadingAnimation';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SkeletonRect, SkeletonCircle } from '../components/Skeleton';
 
 import { BACKEND_URL } from '../Constants';
 
@@ -321,7 +322,26 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
         {/* Event List - Minimalist Rework */}
         <View>
            {loading ? (
-              <ActivityIndicator color="#6366f1" style={{ marginTop: 40 }} />
+              <View style={{ gap: 16, marginTop: 10 }}>
+                {[1, 2, 3, 4].map(i => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 18, borderBottomWidth: i === 4 ? 0 : 1, borderBottomColor: isDark ? 'rgba(51, 65, 85, 0.3)' : '#f1f5f9' }}>
+                    <View style={{ width: 45, paddingTop: 2 }}>
+                       <SkeletonRect width={34} height={14} isDark={isDark} />
+                    </View>
+                    <View style={{ flex: 1, paddingHorizontal: 12, gap: 8 }}>
+                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                         <SkeletonCircle size={10} isDark={isDark} />
+                         <SkeletonRect width={24} height={10} isDark={isDark} />
+                       </View>
+                       <SkeletonRect width="80%" height={16} isDark={isDark} />
+                    </View>
+                    <View style={{ width: 70, alignItems: 'flex-end', gap: 6 }}>
+                       <SkeletonRect width={40} height={10} isDark={isDark} />
+                       <SkeletonRect width={40} height={10} isDark={isDark} />
+                    </View>
+                  </View>
+                ))}
+              </View>
            ) : activeEvents.length === 0 ? (
               <View style={{ padding: 60, alignItems: 'center', opacity: 0.5 }}>
                  <Calendar color={isDark ? '#334155' : '#cbd5e1'} size={48} />
