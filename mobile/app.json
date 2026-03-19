@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1a1514"
+      "backgroundColor": "#4f46e5"
     },
     "ios": {
       "supportsTablet": true,
@@ -17,7 +17,6 @@
     },
     "android": {
       "package": "com.bluskrin.timejournal",
-      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#1a1514",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -46,7 +45,8 @@
     },
     "plugins": [
       "expo-updates",
-      "expo-audio"
+      "expo-audio",
+      "expo-asset"
     ],
     "updates": {
       "enabled": true,
