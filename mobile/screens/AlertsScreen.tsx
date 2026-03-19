@@ -4,7 +4,7 @@ import { useColorScheme } from 'nativewind';
 import { Bell, Zap, MoreVertical, Plus, Trash2, ArrowLeft, X, ChevronRight, Info, ShieldCheck } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../Constants';
+import { API_URL, BACKEND_URL } from '../Constants';
 import { useWebSocket } from '../hooks/useWebSocket';
 import * as DocumentPicker from 'expo-document-picker';
 import { Music, Upload, Check, Play, Pause } from 'lucide-react-native';
@@ -31,13 +31,18 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
   const [minBodyPips, setMinBodyPips] = useState('50');
   const [maxWickPercent, setMaxWickPercent] = useState('25');
 
+  // Built-in sounds — names and files IDENTICAL to web AddAlertModal
+  const WEB_URL = 'https://timejournal.site';
+  const BUILTIN_SOUNDS = [
+    { id: 'alert',  name: 'Standard Alert',      url: `${WEB_URL}/sounds/alert.mp3` },
+    { id: 'modern', name: 'Modern notification',  url: `${WEB_URL}/sounds/modern.mp3` },
+    { id: 'beep',   name: 'Digital beep',         url: `${WEB_URL}/sounds/beep.mp3` },
+    { id: 'chime',  name: 'Success chime',        url: `${WEB_URL}/sounds/chime.mp3` },
+  ];
+
   // Sounds
-  const [availableSounds, setAvailableSounds] = useState<any[]>([
-    { id: 'default', name: 'Default Signal', url: 'https://timejournal.site/sounds/alert.mp3' },
-    { id: 'classic', name: 'Classic Ping', url: 'https://timejournal.site/sounds/ping.mp3' },
-    { id: 'momentum', name: 'Momentum Boom', url: 'https://timejournal.site/sounds/momentum.mp3' },
-  ]);
-  const [selectedSound, setSelectedSound] = useState('default');
+  const [availableSounds, setAvailableSounds] = useState<any[]>(BUILTIN_SOUNDS);
+  const [selectedSound, setSelectedSound] = useState(BUILTIN_SOUNDS[0].url);
   const [uploadingSound, setUploadingSound] = useState(false);
   const [isPlaying, setIsPlaying] = useState<string | null>(null);
   const playerRef = useRef<any>(null);
@@ -86,18 +91,18 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
   };
 
   const fetchSounds = async () => {
+    const WEB_URL = 'https://timejournal.site';
     try {
       const jwt = await AsyncStorage.getItem('userToken');
       const res = await fetch(`${API_URL}/auth/sounds`, { headers: { Authorization: `Bearer ${jwt}` } });
       const data = await res.json();
-      if (data.custom_sounds) {
-        setAvailableSounds([
-          { id: 'default', name: 'Default Signal', url: 'https://timejournal.site/sounds/alert.mp3' },
-          { id: 'classic', name: 'Classic Ping', url: 'https://timejournal.site/sounds/ping.mp3' },
-          { id: 'momentum', name: 'Momentum Boom', url: 'https://timejournal.site/sounds/momentum.mp3' },
-          ...data.custom_sounds
-        ]);
-      }
+      setAvailableSounds([
+        { id: 'alert',  name: 'Standard Alert',     url: `${WEB_URL}/sounds/alert.mp3` },
+        { id: 'modern', name: 'Modern notification', url: `${WEB_URL}/sounds/modern.mp3` },
+        { id: 'beep',   name: 'Digital beep',        url: `${WEB_URL}/sounds/beep.mp3` },
+        { id: 'chime',  name: 'Success chime',       url: `${WEB_URL}/sounds/chime.mp3` },
+        ...(data.custom_sounds || [])
+      ]);
     } catch (_) {}
   };
 
@@ -131,7 +136,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
       targetPrice: priceNum,
       enabled: true,
       frequency: 'Once',
-      sound: selectedSound
+      soundUri: selectedSound  // match web AlertWatcher field name
     };
     setAlerts([newAlert, ...alerts]);
     setTargetPrice('');
@@ -165,7 +170,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
       maxWickPercent: wick,
       enabled: true,
       frequency: 'Recurring',
-      sound: selectedSound
+      soundUri: selectedSound  // match web AlertWatcher field name
     };
     setAlerts([newAlert, ...alerts]);
     setModalVisible(false);
@@ -230,8 +235,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
         return;
       }
 
-      // Audibly play the sound if a URL is available (even for presets)
-      if (soundUrl && soundUrl.startsWith('http')) {
+      if (soundUrl) {
         const { createAudioPlayer } = await import('expo-audio');
         
         if (!playerRef.current) {
@@ -251,7 +255,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
           }
         });
       } else {
-        // Fallback to haptics if no URL
+        // Default system feedback
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setIsPlaying(id);
         setTimeout(() => setIsPlaying(null), 1000);

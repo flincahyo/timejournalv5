@@ -57,7 +57,6 @@ export const usePushNotifications = () => {
     const initNotifications = async () => {
       try {
         const Notifications = await import('expo-notifications');
-        const { createAudioPlayer } = await import('expo-audio');
         
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
@@ -87,17 +86,6 @@ export const usePushNotifications = () => {
 
         notificationListener.current = Notifications.addNotificationReceivedListener(note => {
           setNotification(note);
-          
-          // Custom Sound Sync Logic
-          const customSound = note.request.content.data?.sound as string | undefined;
-          if (customSound && typeof customSound === 'string' && customSound.startsWith('http')) {
-            try {
-              const player = createAudioPlayer(customSound);
-              player.play();
-            } catch (e) {
-              console.log('PUSH_SOUND_ERR');
-            }
-          }
         });
 
         responseListener.current = Notifications.addNotificationResponseReceivedListener(resp => {
@@ -115,7 +103,6 @@ export const usePushNotifications = () => {
       if (responseListener.current) responseListener.current.remove();
     };
   }, []);
-
 
   return { expoPushToken, notification };
 };
