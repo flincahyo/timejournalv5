@@ -107,15 +107,12 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
     if not token or not token.startswith("ExponentPushToken"):
         return
     
-    # Normalize sound: if it's a URL, use 'default' for system, but pass URL in data
-    # If it's a known preset, pass it directly.
-    expo_sound = "default"
-    if sound and not sound.startswith("http") and sound != "none":
-        expo_sound = "default" # Expo Go/Bare usually only supports 'default' unless bundled
-    
+    # If sound is a URL (custom upload), Expo might not play it directly as a system sound
+    # unless it's bundled. But we set it in 'sound' field for Expo to try,
+    # and also in 'data' for the app to play when in foreground.
     message = {
         "to": token,
-        "sound": expo_sound,
+        "sound": sound if sound and not sound.startswith("http") else "default",
         "title": title,
         "body": body,
         "data": {**(data or {}), "sound": sound},
@@ -132,7 +129,6 @@ async def send_expo_push_notification(token: str, title: str, body: str, data: d
             print(f"DEBUG PUSH: Sent notification to {token}: {response.json()}")
     except Exception as e:
         print(f"DEBUG PUSH: Error sending push notification: {e}")
-
 
 
 async def sync_trade_to_journal(user_id: str, trade_data: dict, db: AsyncSession):
@@ -1508,6 +1504,69 @@ async def clear_alert_history(user: User = Depends(get_current_user), db: AsyncS
     return {"ok": True}
 
 
+class TestPushRequest(BaseModel):
+    alertId: Optional[str] = None
+
+@app.post("/api/alerts/test-push")
+async def test_push(req: TestPushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Called by web UI 'Test' button — sends a test push notification to the user's mobile device."""
+    s = await db.get(UserSettings, user.id)
+    if not s or not s.expo_push_token:
+        return {"ok": False, "reason": "No push token registered"}
+    
+    title = "🔔 Alert Test"
+    body = "This is a test push notification from TimeJournal."
+    
+    # If alertId provided, use alert details
+    if req.alertId:
+        result = await db.execute(select(Alert).where(Alert.id == req.alertId, Alert.user_id == user.id))
+        alert = result.scalar_one_or_none()
+        if alert:
+            a = alert.data
+            if a.get("type") == "candle":
+                title = f"🚨 {a.get('symbol')} {a.get('timeframe')} Momentum! (Test)"
+                body = f"Simulated candle alert: ≥{a.get('minBodyPips')} pips, ≤{a.get('maxWickPercent')}% wick"
+            else:
+                title = f"🎯 {a.get('symbol')} Price Target! (Test)"
+                body = f"{a.get('symbol')} crossed {a.get('trigger')} {a.get('targetPrice')}"
+            sound = a.get("soundUri") or a.get("sound", "default")
+        else:
+            sound = "default"
+    else:
+        sound = "default"
+    
+    await send_expo_push_notification(s.expo_push_token, title, body, {"type": "test"}, sound=sound)
+    return {"ok": True}
+
+
+class FirePushRequest(BaseModel):
+    alertId: str
+    title: str
+    body: str
+
+@app.post("/api/alerts/fire-push")
+async def fire_push(req: FirePushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Called by web AlertWatcher when an alert actually fires — sends push notification to mobile."""
+    s = await db.get(UserSettings, user.id)
+    if not s or not s.expo_push_token:
+        return {"ok": False, "reason": "No push token"}
+    
+    # Get sound from alert
+    result = await db.execute(select(Alert).where(Alert.id == req.alertId, Alert.user_id == user.id))
+    alert = result.scalar_one_or_none()
+    sound = "default"
+    if alert:
+        a = alert.data
+        sound = a.get("soundUri") or a.get("sound", "default")
+    
+    await send_expo_push_notification(
+        s.expo_push_token, req.title, req.body,
+        {"alertId": req.alertId, "type": "alert"},
+        sound=sound
+    )
+    return {"ok": True}
+
+
 # ── Settings Endpoints ────────────────────────────────────────────────────────
 @app.get("/api/settings")
 async def get_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1725,6 +1784,9 @@ async def _alert_evaluator_loop():
                         push_token = user.settings.expo_push_token
                         
                         for alert_row in user.alerts:
+                            # Check DB-level enabled flag first, then data field
+                            if not alert_row.enabled:
+                                continue
                             alert = alert_row.data
                             if not alert.get("enabled", True):
                                 continue
@@ -1756,14 +1818,10 @@ async def _alert_evaluator_loop():
                                     triggered = True
                                     title = f"🎯 {symbol} Price Target!"
                                     body = f"{symbol} dropped below {target}! Current: {current_price}"
-                                elif trigger == "Crosses":
-                                    # Crosses logic: check if price is very close or if we have a previous price
-                                    # (We'd need a last_price_cache for perfect crossing, but for now 
-                                    # a very tight tolerance or just hit is better than 0.1%)
-                                    if abs(current_price - target) <= (target * 0.0001):
-                                        triggered = True
-                                        title = f"🎯 {symbol} Price Target!"
-                                        body = f"{symbol} hit/crossed target {target}! Current: {current_price}"
+                                elif trigger == "Crosses" and abs(current_price - target) / target < 0.001:
+                                    triggered = True
+                                    title = f"🎯 {symbol} Price Target!"
+                                    body = f"{symbol} crossed target {target}! Current: {current_price}"
                                 
                                 if alert.get("notes"):
                                     body += f"\nNote: {alert['notes']}"
@@ -1784,17 +1842,9 @@ async def _alert_evaluator_loop():
                                     wick = (high_val - low_val) - body_size
                                     wick_pct = (wick / (high_val - low_val) * 100) if (high_val - low_val) > 0 else 100
                                     
-                                    # Calculate pips - ALIGNED WITH FRONTEND
-                                    s_up = symbol.upper()
-                                    pip_size = 0.0001
-                                    if "JPY" in s_up: pip_size = 0.01
-                                    elif any(x in s_up for x in ["XAU", "GOLD"]): pip_size = 0.1
-                                    elif any(x in s_up for x in ["XAG", "SILVER"]): pip_size = 0.01
-                                    elif any(x in s_up for x in ["BTC", "BITCOIN"]): pip_size = 1.0
-                                    elif any(x in s_up for x in ["ETH", "ETHEREUM"]): pip_size = 0.1
-                                    elif any(x in s_up for x in ["NAS", "US100", "DOW", "US30", "GER", "DAX"]): pip_size = 1.0
-                                    elif any(x in s_up for x in ["SPX", "US500"]): pip_size = 0.1
-                                    
+                                    # Calculate pips
+                                    pip_size = 0.01 if "JPY" in symbol.upper() else 0.0001
+                                    if any(x in symbol.upper() for x in ["XAU", "GOLD"]): pip_size = 0.1
                                     body_pips = body_size / pip_size
                                     
                                     min_body = alert.get("minBodyPips", 0)
@@ -1805,7 +1855,6 @@ async def _alert_evaluator_loop():
                                         triggered = True
                                         title = f"🚨 {symbol} {tf} Momentum!"
                                         body = f"{direction} candle with {body_pips:.1f} pips body and {wick_pct:.0f}% wick!"
-                                        print(f"🔔 DEBUG ALERT: Momentum triggered for {symbol} {tf}: {body_pips:.1f} pips")
                             
                             if triggered:
                                 _alert_notified[alert_id] = now
@@ -1814,7 +1863,7 @@ async def _alert_evaluator_loop():
                                     await send_expo_push_notification(
                                         push_token, title, body,
                                         {"alertId": alert_id, "symbol": symbol},
-                                        sound=alert.get("sound", "default")
+                                        sound=alert.get("soundUri") or alert.get("sound", "default")
                                     )
                                 
                                 # Disable "Once" alerts

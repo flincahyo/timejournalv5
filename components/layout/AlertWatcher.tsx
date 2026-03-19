@@ -176,7 +176,7 @@ function fireAlert(alert: any, symbol: string, direction: string, bodyText: stri
         new Notification(title, { body: bodyText });
     }
 
-    // 2. Mobile React Native WebView Bridge
+    // 2. Mobile React Native WebView Bridge (if web loaded inside mobile WebView)
     if (typeof window !== "undefined" && (window as any).ReactNativeWebView) {
         (window as any).ReactNativeWebView.postMessage(JSON.stringify({
             type: 'NATIVE_NOTIFICATION',
@@ -186,7 +186,10 @@ function fireAlert(alert: any, symbol: string, direction: string, bodyText: stri
         }));
     }
 
-    // Check both `soundUri` (web) and `sound` (mobile fallback) field names
+    // 3. Send Expo push notification to mobile via backend
+    apiPost("/api/alerts/fire-push", { alertId: alert.id, title, body: bodyText }).catch(() => {});
+
+    // 4. Play sound
     const soundUrl = alert.soundUri || (alert as any).sound;
     if (soundUrl) {
         try {

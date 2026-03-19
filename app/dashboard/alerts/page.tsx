@@ -92,9 +92,10 @@ function SymbolCombobox({
 }
 
 const SOUND_PRESETS = [
-  { label: "Notification Bell", url: "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" },
-  { label: "Soft Chime", url: "https://assets.mixkit.co/active_storage/sfx/2867/2867-preview.mp3" },
-  { label: "Digital Beep", url: "https://assets.mixkit.co/active_storage/sfx/2954/2954-preview.mp3" },
+  { label: "Standard Alert",     url: "/sounds/alert.mp3" },
+  { label: "Modern notification", url: "/sounds/modern.mp3" },
+  { label: "Digital beep",        url: "/sounds/beep.mp3" },
+  { label: "Success chime",       url: "/sounds/chime.mp3" },
   { label: "Upload Audio File...", url: "custom" }
 ];
 
@@ -178,7 +179,10 @@ export default function AlertsPage() {
   };
 
   const testAlert = (alert: AnyAlert) => {
-    playTestSound(alert.soundUri);
+    // Play the sound
+    const soundUrl = alert.soundUri || (alert as any).sound;
+    playTestSound(soundUrl || "/sounds/alert.mp3");
+    // Show toast
     if (alert.type === "candle") {
       addToast({
         title: `🚨 ${alert.symbol} ${alert.timeframe} Test!`,
@@ -192,6 +196,8 @@ export default function AlertsPage() {
         type: alert.trigger === "Above" ? "bullish" : "bearish"
       });
     }
+    // Also send push notification to mobile
+    apiPost("/api/alerts/test-push", { alertId: alert.id }).catch(() => {});
   };
 
   const handleAddCandleAlert = (e: React.FormEvent) => {
