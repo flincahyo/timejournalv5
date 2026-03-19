@@ -174,7 +174,7 @@ function AvatarBadge({ name, image, size = 44, onPress }: { name: string, image?
           source={{ uri: image }}
           style={{
             width: size, height: size, borderRadius: size / 2,
-            borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)',
+            borderWidth: 2, borderColor: C.accent,
           }}
         />
       ) : (
