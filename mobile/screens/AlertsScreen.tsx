@@ -47,7 +47,8 @@ export default function AlertsScreen({ onBack }: { onBack?: () => void }) {
   const [symbolSearch, setSymbolSearch] = useState('');
 
   const { prices } = useWebSocket();
-  const currentPrice = prices[symbol.toUpperCase()] || null;
+  const rawPrice = prices[symbol.toUpperCase()];
+  const currentPrice = rawPrice ? (typeof rawPrice === 'object' ? (rawPrice as any).bid : rawPrice) : null;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 

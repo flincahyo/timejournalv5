@@ -863,10 +863,11 @@ async def get_pending_connections(
 
 class MT5PushPayload(BaseModel):
     user_id: str
-    type: str               # "connected" | "all_trades" | "live_trades" | "account_update" | "error"
+    type: str               # "connected" | "all_trades" | "live_trades" | "account_update" | "error" | "symbols"
     trades: list = []
     account: dict = {}
     message: str = ""
+    symbols: list = []
 
 @app.post("/api/mt5/push")
 async def receive_mt5_push(
@@ -893,6 +894,7 @@ async def receive_mt5_push(
         "trades": payload.trades,
         "account": payload.account,
         "message": payload.message,
+        "symbols": payload.symbols,
     }
     # Re-use existing on_mt5_message handler — same as pull model
     await on_mt5_message(payload.user_id, msg)
