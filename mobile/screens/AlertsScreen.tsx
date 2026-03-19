@@ -33,9 +33,9 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
 
   // Sounds
   const [availableSounds, setAvailableSounds] = useState<any[]>([
-    { id: 'default', name: 'Default Signal', url: null },
-    { id: 'classic', name: 'Classic Ping', url: null },
-    { id: 'momentum', name: 'Momentum Boom', url: null },
+    { id: 'default', name: 'Default Signal', url: 'https://timejournal.site/sounds/alert.mp3' },
+    { id: 'classic', name: 'Classic Ping', url: 'https://timejournal.site/sounds/ping.mp3' },
+    { id: 'momentum', name: 'Momentum Boom', url: 'https://timejournal.site/sounds/momentum.mp3' },
   ]);
   const [selectedSound, setSelectedSound] = useState('default');
   const [uploadingSound, setUploadingSound] = useState(false);
@@ -92,9 +92,9 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
       const data = await res.json();
       if (data.custom_sounds) {
         setAvailableSounds([
-          { id: 'default', name: 'Default Signal', url: null },
-          { id: 'classic', name: 'Classic Ping', url: null },
-          { id: 'momentum', name: 'Momentum Boom', url: null },
+          { id: 'default', name: 'Default Signal', url: 'https://timejournal.site/sounds/alert.mp3' },
+          { id: 'classic', name: 'Classic Ping', url: 'https://timejournal.site/sounds/ping.mp3' },
+          { id: 'momentum', name: 'Momentum Boom', url: 'https://timejournal.site/sounds/momentum.mp3' },
           ...data.custom_sounds
         ]);
       }
@@ -230,7 +230,8 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
         return;
       }
 
-      if (soundUrl) {
+      // Audibly play the sound if a URL is available (even for presets)
+      if (soundUrl && soundUrl.startsWith('http')) {
         const { createAudioPlayer } = await import('expo-audio');
         
         if (!playerRef.current) {
@@ -250,7 +251,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
           }
         });
       } else {
-        // Default system feedback
+        // Fallback to haptics if no URL
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setIsPlaying(id);
         setTimeout(() => setIsPlaying(null), 1000);

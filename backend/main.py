@@ -1756,10 +1756,14 @@ async def _alert_evaluator_loop():
                                     triggered = True
                                     title = f"🎯 {symbol} Price Target!"
                                     body = f"{symbol} dropped below {target}! Current: {current_price}"
-                                elif trigger == "Crosses" and abs(current_price - target) / target < 0.001:
-                                    triggered = True
-                                    title = f"🎯 {symbol} Price Target!"
-                                    body = f"{symbol} crossed target {target}! Current: {current_price}"
+                                elif trigger == "Crosses":
+                                    # Crosses logic: check if price is very close or if we have a previous price
+                                    # (We'd need a last_price_cache for perfect crossing, but for now 
+                                    # a very tight tolerance or just hit is better than 0.1%)
+                                    if abs(current_price - target) <= (target * 0.0001):
+                                        triggered = True
+                                        title = f"🎯 {symbol} Price Target!"
+                                        body = f"{symbol} hit/crossed target {target}! Current: {current_price}"
                                 
                                 if alert.get("notes"):
                                     body += f"\nNote: {alert['notes']}"
