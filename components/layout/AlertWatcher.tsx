@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef } from "react";
 import { useAlertStore } from "@/store";
@@ -186,9 +186,11 @@ function fireAlert(alert: any, symbol: string, direction: string, bodyText: stri
         }));
     }
 
-    if (alert.soundUri) {
+    // Check both `soundUri` (web) and `sound` (mobile fallback) field names
+    const soundUrl = alert.soundUri || (alert as any).sound;
+    if (soundUrl) {
         try {
-            const audio = new Audio(alert.soundUri);
+            const audio = new Audio(soundUrl);
             audio.play().catch(e => console.error("Audio playback failed (interaction required?):", e));
         } catch (e) { }
     }
