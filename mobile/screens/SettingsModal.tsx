@@ -444,7 +444,7 @@ export default function SettingsModal({
       </Animated.View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', pointerEvents: 'box-none' }}>
-        <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, height: '95%', transform: [{ translateY: slideY }], shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 24 }}>
+        <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, height: '100%', transform: [{ translateY: slideY }], shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 24 }}>
           
           {/* Header */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
