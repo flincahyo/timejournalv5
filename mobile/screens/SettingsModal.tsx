@@ -265,41 +265,23 @@ export default function SettingsModal({
 
   // Animation States
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-  const [renderComponent, setRenderComponent] = useState(false);
   const slideY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeBg = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    if (visible) {
-      setRenderComponent(true);
-      Animated.parallel([
-        Animated.spring(slideY, {
-          toValue: 0,
-          damping: 24,
-          stiffness: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeBg, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        })
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.spring(slideY, {
-          toValue: SCREEN_HEIGHT,
-          damping: 24,
-          stiffness: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeBg, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        })
-      ]).start(() => setRenderComponent(false));
-    }
+    Animated.parallel([
+      Animated.spring(slideY, {
+        toValue: visible ? 0 : SCREEN_HEIGHT,
+        damping: 24,
+        stiffness: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeBg, {
+        toValue: visible ? 1 : 0,
+        duration: visible ? 250 : 200,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [visible]);
 
   // Edit States
@@ -438,7 +420,7 @@ export default function SettingsModal({
   return (
     <Animated.View 
       style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: bg, transform: [{ translateY: slideY }] }}
-      pointerEvents={renderComponent ? 'auto' : 'none'}
+      pointerEvents={visible ? 'auto' : 'none'}
     >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: bg }}>
