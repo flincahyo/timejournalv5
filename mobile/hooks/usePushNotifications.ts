@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import Constants from 'expo-constants';
 import { API_URL } from '../Constants';
 
-const IS_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+// Hardcoded fallback - safe to expose (it's in app.json already)
+const EXPO_PROJECT_ID = 'bbe7e363-2fca-4820-88c6-06f988ceb456';
 
 export const usePushNotifications = () => {
   const [expoPushToken, setExpoPushToken] = useState<string | undefined>(undefined);
@@ -13,13 +14,10 @@ export const usePushNotifications = () => {
   const notificationListener = useRef<any>(null);
   const responseListener = useRef<any>(null);
 
-  async function registerForPushNotificationsAsync() {
-    if (IS_EXPO_GO) return undefined;
-
+  async function registerForPushNotificationsAsync(): Promise<string | undefined> {
     try {
       const Notifications = await import('expo-notifications');
-      let token;
-      
+
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
           name: 'default',
@@ -29,31 +27,38 @@ export const usePushNotifications = () => {
         });
       }
 
-      if (Device.isDevice) {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-        if (finalStatus !== 'granted') return;
-        
-        const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      // Request permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
       }
+      
+      console.log('[PUSH] permission status:', finalStatus);
+      if (finalStatus !== 'granted') {
+        console.warn('[PUSH] Permission not granted:', finalStatus);
+        return undefined;
+      }
+
+      // Get project ID — prefer app.json, fallback to hardcoded
+      const projectId = Constants?.expoConfig?.extra?.eas?.projectId 
+        ?? Constants?.easConfig?.projectId 
+        ?? EXPO_PROJECT_ID;
+      
+      console.log('[PUSH] using projectId:', projectId);
+
+      const tokenResult = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = tokenResult.data;
+      console.log('[PUSH] token obtained:', token ? token.substring(0, 40) + '...' : 'null');
       return token;
-    } catch (e) {
-      console.log('PUSH_REG_ERR');
+    } catch (e: any) {
+      console.error('[PUSH] registerForPushNotificationsAsync error:', e?.message || e);
       return undefined;
     }
   }
 
   useEffect(() => {
-    if (IS_EXPO_GO) {
-      console.log('PUSH_INACTIVE_EXPO_GO');
-      return;
-    }
-
     const initNotifications = async () => {
       try {
         const Notifications = await import('expo-notifications');
@@ -69,11 +74,13 @@ export const usePushNotifications = () => {
         });
 
         const token = await registerForPushNotificationsAsync();
-        console.log('[PUSH] token obtained:', token ? token.substring(0, 30) + '...' : 'null');
+        console.log('[PUSH] Final token:', token ? token.substring(0, 40) + '...' : 'NONE');
+        
         if (token) {
           setExpoPushToken(token);
           const jwt = await AsyncStorage.getItem('userToken');
-          console.log('[PUSH] jwt present:', !!jwt, 'API_URL:', API_URL);
+          console.log('[PUSH] JWT present:', !!jwt, '| API_URL:', API_URL);
+          
           if (jwt) {
             try {
               const res = await fetch(`${API_URL}/push-token`, {
@@ -85,15 +92,15 @@ export const usePushNotifications = () => {
                 body: JSON.stringify({ token }),
               });
               const data = await res.json();
-              console.log('[PUSH] register result:', JSON.stringify(data));
-            } catch (regErr) {
-              console.error('[PUSH] register error:', regErr);
+              console.log('[PUSH] Registration result:', JSON.stringify(data));
+            } catch (regErr: any) {
+              console.error('[PUSH] Registration network error:', regErr?.message || regErr);
             }
           } else {
-            console.warn('[PUSH] No JWT found — push token NOT registered to backend.');
+            console.warn('[PUSH] No JWT — unable to register token with backend');
           }
         } else {
-          console.warn('[PUSH] No token obtained — device may not support push or permission denied.');
+          console.warn('[PUSH] No token — check permissions or projectId');
         }
 
         notificationListener.current = Notifications.addNotificationReceivedListener(note => {
@@ -101,8 +108,8 @@ export const usePushNotifications = () => {
           
           // Play foreground sound — check soundUrl (new) then sound (fallback)
           const data = note.request.content.data || {};
-          const soundUrl = data.soundUrl || data.sound;
-          if (soundUrl && typeof soundUrl === 'string' && soundUrl.startsWith('http')) {
+          const soundUrl = (data.soundUrl || data.sound) as string | undefined;
+          if (soundUrl && soundUrl.startsWith('http')) {
             import('expo-audio').then(({ createAudioPlayer }) => {
               const player = createAudioPlayer(soundUrl);
               player.play();
@@ -111,10 +118,10 @@ export const usePushNotifications = () => {
         });
 
         responseListener.current = Notifications.addNotificationResponseReceivedListener(resp => {
-          console.log('PUSH_RESPONSE');
+          console.log('[PUSH] Notification tapped:', resp.notification.request.content.title);
         });
-      } catch (e) {
-        console.log('PUSH_INIT_ERR');
+      } catch (e: any) {
+        console.error('[PUSH] initNotifications error:', e?.message || e);
       }
     };
 
@@ -128,3 +135,6 @@ export const usePushNotifications = () => {
 
   return { expoPushToken, notification };
 };
+
+
+
