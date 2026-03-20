@@ -27,8 +27,11 @@ import { VStack } from '../components/ui/vstack';
 import { HStack } from '../components/ui/hstack';
 
 // ── PnL Card Share Component ──────────────────────────────────────────────────
+import { BrandLogo } from '../components/BrandLogo';
+
 type PeriodKey = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type ModeKey = 'growth' | 'detail';
+type ThemeKey = 'dark' | 'aurora' | 'ocean';
 
 function filterTradesByPeriod(trades: any[], period: PeriodKey) {
   const now = new Date();
@@ -44,11 +47,14 @@ function filterTradesByPeriod(trades: any[], period: PeriodKey) {
 }
 
 function computePnlStats(trades: any[]) {
-  const totalPnl = trades.reduce((s, t) => s + (t.profit || 0), 0);
-  const wins = trades.filter(t => (t.profit || 0) > 0).length;
-  const winRate = trades.length > 0 ? Math.round((wins / trades.length) * 100) : 0;
+  const sorted = [...trades].sort((a, b) =>
+    (a.closeTime || a.openTime || '').localeCompare(b.closeTime || b.openTime || '')
+  );
+  const totalPnl = sorted.reduce((s, t) => s + (t.profit || 0), 0);
+  const wins = sorted.filter(t => (t.profit || 0) > 0).length;
+  const winRate = sorted.length > 0 ? Math.round((wins / sorted.length) * 100) : 0;
   const dayMap: Record<string, number> = {};
-  trades.forEach(t => {
+  sorted.forEach(t => {
     const d = (t.closeTime || t.openTime || t.time || '').substring(0, 10);
     dayMap[d] = (dayMap[d] || 0) + (t.profit || 0);
   });
@@ -56,112 +62,210 @@ function computePnlStats(trades: any[]) {
   const avgDaily = days > 0 ? totalPnl / days : 0;
   const cumulative: number[] = [0];
   let running = 0;
-  trades.sort((a, b) => (a.closeTime || a.openTime || '').localeCompare(b.closeTime || b.openTime || '')).forEach(t => { running += (t.profit || 0); cumulative.push(running); });
-  return { totalPnl, winRate, tradeCount: trades.length, avgDaily, cumulative };
+  sorted.forEach(t => { running += (t.profit || 0); cumulative.push(running); });
+  // Derive starting balance from first trade's balance field if available
+  const startBal = sorted.length > 0 ? ((sorted[0].balance || 0) - (sorted[0].profit || 0)) : 0;
+  const growthPct = startBal > 0 ? (totalPnl / startBal) * 100 : 0;
+  return { totalPnl, winRate, tradeCount: sorted.length, avgDaily, cumulative, growthPct };
 }
 
-const PnLCard = React.forwardRef<ViewShot, { trades: any[], period: PeriodKey, mode: ModeKey, userName: string }>(
-  ({ trades, period, mode, userName }, ref) => {
-    const filtered = useMemo(() => filterTradesByPeriod(trades, period), [trades, period]);
-    const { totalPnl, winRate, tradeCount, avgDaily, cumulative } = useMemo(() => computePnlStats(filtered), [filtered]);
-    const isPos = totalPnl >= 0;
-    const periodLabels: Record<PeriodKey, string> = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' };
-    const periodSubLabels: Record<PeriodKey, string> = {
-      daily: format(new Date(), 'MMM d, yyyy'),
-      weekly: `${format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')} – ${format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')}`,
-      monthly: format(new Date(), 'MMMM yyyy'),
-      yearly: format(new Date(), 'yyyy'),
-    };
+// Equity curve SVG path helper
+function buildSvgPath(cumulative: number[], W: number, H: number) {
+  if (cumulative.length < 2) return '';
+  const minV = Math.min(...cumulative), maxV = Math.max(...cumulative);
+  const range = maxV - minV || 1;
+  const pts = cumulative.map((v, i) => ({
+    x: (i / (cumulative.length - 1)) * W,
+    y: H - 6 - ((v - minV) / range) * (H - 12)
+  }));
+  return pts.reduce((d, pt, i) => i === 0 ? `M${pt.x},${pt.y}` : `${d} L${pt.x},${pt.y}`, '');
+}
 
-    // SVG equity curve
-    const W = 320, H = 70;
-    const svgPath = useMemo(() => {
-      if (cumulative.length < 2) return '';
-      const minV = Math.min(...cumulative), maxV = Math.max(...cumulative);
-      const range = maxV - minV || 1;
-      const pts = cumulative.map((v, i) => ({
-        x: (i / (cumulative.length - 1)) * W,
-        y: H - 8 - ((v - minV) / range) * (H - 16)
-      }));
-      return pts.reduce((d, pt, i) => i === 0 ? `M${pt.x},${pt.y}` : `${d} L${pt.x},${pt.y}`, '');
-    }, [cumulative]);
-    const growthPct = tradeCount > 0 && totalPnl !== 0 ? Math.abs(totalPnl / 10).toFixed(1) : '0.0'; // simplified growth
+// ── Card theme configs ────────────────────────────────────────────────────────
+const CARD_THEMES: Record<ThemeKey, {
+  bg: string; gradient: [string, string, string?]; accentPos: string; accentNeg: string;
+  labelColor: string; subColor: string; divider: string; watermarkColor: string;
+}> = {
+  dark: {
+    bg: '#0a0b0e',
+    gradient: ['#0d1f12', '#0a0b0e'],
+    accentPos: '#10b981', accentNeg: '#ef4444',
+    labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
+    divider: 'rgba(255,255,255,0.07)', watermarkColor: 'rgba(255,255,255,0.18)',
+  },
+  aurora: {
+    bg: '#0c0a1e',
+    gradient: ['#1a0a2e', '#0c0a1e'],
+    accentPos: '#a78bfa', accentNeg: '#f472b6',
+    labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
+    divider: 'rgba(167,139,250,0.12)', watermarkColor: 'rgba(255,255,255,0.18)',
+  },
+  ocean: {
+    bg: '#061822',
+    gradient: ['#0a2a3e', '#061822'],
+    accentPos: '#38bdf8', accentNeg: '#f87171',
+    labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
+    divider: 'rgba(56,189,248,0.1)', watermarkColor: 'rgba(255,255,255,0.18)',
+  },
+};
 
-    return (
-      <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
-        <View style={{ width: 340, borderRadius: 24, overflow: 'hidden', backgroundColor: '#0a0b0e' }}>
-          <ExpoLinearGradient
-            colors={isPos ? ['#052e16', '#0a0b0e'] : ['#2d0a0a', '#0a0b0e']}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
+const THEME_NAMES: Record<ThemeKey, string> = { dark: 'Dark', aurora: 'Aurora', ocean: 'Ocean' };
+const THEME_KEYS: ThemeKey[] = ['dark', 'aurora', 'ocean'];
 
-          {/* Equity curve background */}
-          {svgPath !== '' && (
-            <View style={{ position: 'absolute', bottom: 44, left: 0, right: 0, opacity: 0.12 }}>
-              <Svg width={W} height={H}>
-                <Path d={svgPath} stroke={isPos ? '#10b981' : '#ef4444'} strokeWidth={2} fill="none" />
-              </Svg>
-            </View>
-          )}
+// ── Single PnLCard (one theme) ────────────────────────────────────────────────
+const PnLCardSingle = React.forwardRef<ViewShot, {
+  trades: any[]; period: PeriodKey; mode: ModeKey; theme: ThemeKey;
+}>(({ trades, period, mode, theme }, ref) => {
+  const filtered = useMemo(() => filterTradesByPeriod(trades, period), [trades, period]);
+  const { totalPnl, winRate, tradeCount, avgDaily, cumulative, growthPct } = useMemo(() => computePnlStats(filtered), [filtered]);
+  const tc = CARD_THEMES[theme];
+  const isPos = totalPnl >= 0;
+  const accentColor = isPos ? tc.accentPos : tc.accentNeg;
+  const periodLabels: Record<PeriodKey, string> = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' };
+  const periodSubLabels: Record<PeriodKey, string> = {
+    daily: format(new Date(), 'MMM d, yyyy'),
+    weekly: `${format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')} – ${format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')}`,
+    monthly: format(new Date(), 'MMMM yyyy'),
+    yearly: format(new Date(), 'yyyy'),
+  };
+  const W = 320, H = 60;
+  const svgPath = useMemo(() => buildSvgPath(cumulative, W, H), [cumulative]);
+  const gradColors = isPos ? [tc.gradient[0], tc.gradient[1]] as [string, string] : [`${tc.accentNeg}18`, tc.bg] as [string, string];
 
-          <View style={{ padding: 24 }}>
-            {/* Header row */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>TJ</Text>
-                </View>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>TimeJournal</Text>
-              </View>
-              <View style={{ backgroundColor: isPos ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
-                <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{periodLabels[period]}</Text>
-              </View>
-            </View>
+  return (
+    <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
+      <View style={{ width: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: tc.bg }}>
+        <ExpoLinearGradient colors={gradColors} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+        {/* Subtle grid lines for aurora/ocean */}
+        {theme !== 'dark' && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.04 }}>
+            {[0,1,2,3].map(i => <View key={i} style={{ position: 'absolute', left: 0, right: 0, top: `${25 * i}%`, height: 1, backgroundColor: accentColor }} />)}
+          </View>
+        )}
+        {/* Equity curve bg */}
+        {svgPath !== '' && (
+          <View style={{ position: 'absolute', bottom: 36, left: 0, right: 0, opacity: 0.1 }}>
+            <Svg width={W} height={H}>
+              <Path d={svgPath} stroke={accentColor} strokeWidth={2} fill="none" />
+            </Svg>
+          </View>
+        )}
+        {/* Glow dot for aurora */}
+        {theme === 'aurora' && (
+          <View style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, borderRadius: 70, backgroundColor: '#7c3aed', opacity: 0.12 }} />
+        )}
+        {theme === 'ocean' && (
+          <View style={{ position: 'absolute', bottom: -30, left: -30, width: 120, height: 120, borderRadius: 60, backgroundColor: '#0284c7', opacity: 0.15 }} />
+        )}
 
-            {/* Main P&L */}
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4, textTransform: 'uppercase' }}>Net P&L</Text>
-            <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 40, fontWeight: '900', letterSpacing: -1, marginBottom: 2 }}>
-              {isPos ? '+' : '-'}${Math.abs(totalPnl).toFixed(2)}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 }}>
-              <View style={{ backgroundColor: isPos ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                {isPos ? <ArrowUp size={10} color="#10b981" /> : <ArrowDown size={10} color="#ef4444" />}
-                <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 10, fontWeight: '900' }}>{isPos ? '+' : '-'}{growthPct}%</Text>
-              </View>
-              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '600' }}>{periodSubLabels[period]}</Text>
-            </View>
-
-            {/* Detail stats — only in 'detail' mode */}
-            {mode === 'detail' && (
-              <>
-                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 16 }} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  {[
-                    { label: 'Win Rate', value: `${winRate}%` },
-                    { label: 'Trades', value: `${tradeCount}` },
-                    { label: 'Avg/Day', value: `${avgDaily >= 0 ? '+' : ''}$${Math.abs(avgDaily).toFixed(0)}` },
-                  ].map((s, i) => (
-                    <View key={i} style={{ alignItems: 'center' }}>
-                      <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 9, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</Text>
-                      <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '900' }}>{s.value}</Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginTop: 16, marginBottom: 12 }} />
-              </>
-            )}
-
-            {/* Watermark */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: mode === 'growth' ? 20 : 0 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 9, fontWeight: '600' }}>@{userName}</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.15)', fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>timejournal.site</Text>
+        <View style={{ padding: 22 }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <BrandLogo size={15} whiteJournal />
+            <View style={{ backgroundColor: `${accentColor}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: `${accentColor}30` }}>
+              <Text style={{ color: accentColor, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 }}>{periodLabels[period]}</Text>
             </View>
           </View>
+
+          {/* Growth-only mode — just the big % */}
+          {mode === 'growth' ? (
+            <View style={{ alignItems: 'flex-start', marginBottom: 18 }}>
+              <Text style={{ color: tc.labelColor, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Growth</Text>
+              <Text style={{ color: accentColor, fontSize: 52, fontWeight: '900', letterSpacing: -2, lineHeight: 56 }}>
+                {growthPct >= 0 ? '+' : ''}{growthPct.toFixed(2)}%
+              </Text>
+              <Text style={{ color: tc.subColor, fontSize: 10, fontWeight: '600', marginTop: 4 }}>{periodSubLabels[period]}</Text>
+            </View>
+          ) : (
+            <>
+              {/* Full detail mode */}
+              <Text style={{ color: tc.labelColor, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>Net P&L</Text>
+              <Text style={{ color: accentColor, fontSize: 36, fontWeight: '900', letterSpacing: -1, marginBottom: 4 }}>
+                {isPos ? '+' : ''}${totalPnl.toFixed(2)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <View style={{ backgroundColor: `${accentColor}15`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  {isPos ? <ArrowUp size={9} color={accentColor} /> : <ArrowDown size={9} color={accentColor} />}
+                  <Text style={{ color: accentColor, fontSize: 10, fontWeight: '900' }}>{growthPct >= 0 ? '+' : ''}{growthPct.toFixed(2)}%</Text>
+                </View>
+                <Text style={{ color: tc.subColor, fontSize: 10, fontWeight: '600' }}>{periodSubLabels[period]}</Text>
+              </View>
+              <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 14 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                {[
+                  { label: 'Win Rate', value: `${winRate}%` },
+                  { label: 'Trades', value: `${tradeCount}` },
+                  { label: 'Avg/Day', value: `${avgDaily >= 0 ? '+' : ''}$${Math.abs(avgDaily).toFixed(0)}` },
+                ].map((s, i) => (
+                  <View key={i} style={{ alignItems: 'center' }}>
+                    <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{s.label}</Text>
+                    <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '900' }}>{s.value}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={{ height: 1, backgroundColor: tc.divider, marginTop: 14, marginBottom: 10 }} />
+            </>
+          )}
+
+          {/* Watermark */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: mode === 'growth' ? 8 : 0 }}>
+            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '600' }}>timejournal.site</Text>
+            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>TimeJournal App</Text>
+          </View>
         </View>
-      </ViewShot>
-    );
-  }
-);
+      </View>
+    </ViewShot>
+  );
+});
+
+// ── Carousel wrapper (swipeable 3-card preview) ───────────────────────────────
+const PnLCardCarousel = React.forwardRef<any, {
+  trades: any[]; period: PeriodKey; mode: ModeKey;
+  activeTheme: ThemeKey; onThemeChange: (t: ThemeKey) => void;
+}>(({ trades, period, mode, activeTheme, onThemeChange }, ref) => {
+  const scrollRef = useRef<ScrollView>(null);
+  const [currentIdx, setCurrentIdx] = useState(THEME_KEYS.indexOf(activeTheme));
+  const CARD_W = 320;
+  const cardRefs = useRef<any[]>([null, null, null]);
+
+  // expose capture of active card
+  React.useImperativeHandle(ref, () => ({
+    capture: () => {
+      const r = cardRefs.current[currentIdx];
+      if (r?.capture) return r.capture();
+      return Promise.reject('no ref');
+    }
+  }));
+
+  return (
+    <View>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={e => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
+          setCurrentIdx(idx);
+          onThemeChange(THEME_KEYS[idx]);
+        }}
+      >
+        {THEME_KEYS.map((tk, i) => (
+          <View key={tk} style={{ width: CARD_W }}>
+            <PnLCardSingle ref={el => { cardRefs.current[i] = el; }} trades={trades} period={period} mode={mode} theme={tk} />
+          </View>
+        ))}
+      </ScrollView>
+      {/* Dots */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+        {THEME_KEYS.map((tk, i) => (
+          <View key={tk} style={{ width: currentIdx === i ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: currentIdx === i ? '#6366f1' : 'rgba(99,102,241,0.3)' }} />
+        ))}
+      </View>
+      <Text style={{ textAlign: 'center', fontSize: 9, fontWeight: '700', color: '#6366f1', marginTop: 4, letterSpacing: 0.5 }}>{THEME_NAMES[activeTheme]}</Text>
+    </View>
+  );
+});
 
 // ── Daily group card (extracted for memoization) ──────────────────────────────────
 const DailyGroupCard = React.memo(({
@@ -682,6 +786,7 @@ const HistoryScreen = React.memo(() => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharePeriod, setSharePeriod] = useState<PeriodKey>('monthly');
   const [shareMode, setShareMode] = useState<ModeKey>('detail');
+  const [shareTheme, setShareTheme] = useState<ThemeKey>('dark');
   const [isSharing, setIsSharing] = useState(false);
   const cardRef = useRef<any>(null);
 
@@ -1447,8 +1552,8 @@ const HistoryScreen = React.memo(() => {
                 </TouchableOpacity>
               ))}
             </View>
-            <View style={{ alignItems: 'center', marginBottom: 24 }}>
-              <PnLCard ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} userName="trader" />
+            <View style={{ marginBottom: 24, marginHorizontal: -24 }}>
+              <PnLCardCarousel ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} activeTheme={shareTheme} onThemeChange={(t) => setShareTheme(t)} />
             </View>
             <TouchableOpacity onPress={shareCard} disabled={isSharing} style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
               {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
