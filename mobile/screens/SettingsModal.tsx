@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, BACKEND_URL } from '../Constants';
 import { 
   LogOut, ChevronRight, Bell, Moon, Sun, X, Lock, Link2, BarChart2, 
-  Upload, Music, Send, Camera
+  Upload, Music, Send, Camera, ArrowLeft
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
@@ -438,20 +438,34 @@ export default function SettingsModal({
   if (!renderComponent) return null;
 
   return (
-    <View style={{ position: 'absolute', inset: 0, zIndex: 100 }}>
-      <Animated.View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', opacity: fadeBg }}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-      </Animated.View>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', pointerEvents: 'box-none' }}>
-        <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingBottom: 40, height: '100%', transform: [{ translateY: slideY }], shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 24 }}>
+    <Animated.View style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: bg, transform: [{ translateY: slideY }] }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: bg }}>
           
-          {/* Header */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: textP }}>Settings</Text>
-            <TouchableOpacity onPress={onClose}>
-              <X size={24} color={textM} />
+          {/* Header (Matching NotificationCenterScreen precisely) */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: border,
+          }}>
+            <TouchableOpacity
+              onPress={onClose} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={textM} />
             </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: textP, letterSpacing: -0.5 }}>
+                Settings & Profile
+              </Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.8 }}>
+                ACCOUNT CONFIGURATION
+              </Text>
+            </View>
           </View>
 
           <ScrollView
@@ -604,8 +618,8 @@ export default function SettingsModal({
           <AvatarPickerModal visible={avatarModalVisible} currentImage={avatarUrl} isDark={isDark} onClose={() => setAvatarModalVisible(false)} onAvatarUpdated={(url) => { setAvatarUrl(url); setAvatarModalVisible(false); onUserUpdated?.({ image: url }); }} />
           <NotificationSettingsModal visible={isNotifModalVisible} onClose={() => setNotifModalVisible(false)} isDark={isDark} enabled={notifEnabled} setEnabled={(val: boolean) => { setNotifEnabled(val); saveSettings('news', { enabled: val }); }} priceSound={defaultPriceSound} setPriceSound={(id: string) => { setDefaultPriceSound(id); saveSettings('audio', { price_sound: id }); }} momentumSound={defaultMomentumSound} setMomentumSound={(id: string) => { setDefaultMomentumSound(id); saveSettings('audio', { momentum_sound: id }); }} newsSound={defaultNewsSound} setNewsSound={(id: string) => { setDefaultNewsSound(id); saveSettings('news', { sound: id }); }} availableSounds={availableSounds} setAvailableSounds={setAvailableSounds} />
 
-        </Animated.View>
+        </View>
       </KeyboardAvoidingView>
-    </View>
+    </Animated.View>
   );
 }

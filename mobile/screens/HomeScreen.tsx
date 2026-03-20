@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../Constants';
 import { useMT5Sync } from '../hooks/useMT5Sync';
 import { AILoadingAnimation } from '../components/AILoadingAnimation';
+import * as Haptics from 'expo-haptics';
 import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -167,30 +168,52 @@ function WavingHand() {
 // ── Avatar chip — shows photo or initials ────────────────────────────────────
 function AvatarBadge({ name, image, size = 44, onPress }: { name: string, image?: string | null, size?: number, onPress?: () => void }) {
   const initials = name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'TR';
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: 0.9, useNativeDriver: true }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 50, useNativeDriver: true }).start();
+  };
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onPress?.();
+  };
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
-      {image ? (
-        <Image
-          source={{ uri: image }}
-          style={{
-            width: size, height: size, borderRadius: size / 2,
-            borderWidth: 2, borderColor: C.accent,
-          }}
-        />
-      ) : (
-        <LinearGradient
-          colors={['#6366f1', '#8b5cf6']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          style={{
-            width: size, height: size, borderRadius: size / 2,
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)',
-            shadowColor: C.accent, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
-          }}
-        >
-          <Text style={{ fontSize: size * 0.36, fontWeight: '900', color: '#fff' }}>{initials}</Text>
-        </LinearGradient>
-      )}
+    <TouchableOpacity 
+      onPress={handlePress} 
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={0.9}
+    >
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        {image ? (
+          <Image
+            source={{ uri: image }}
+            style={{
+              width: size, height: size, borderRadius: size / 2,
+              borderWidth: 2, borderColor: C.accent,
+            }}
+          />
+        ) : (
+          <LinearGradient
+            colors={['#6366f1', '#8b5cf6']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={{
+              width: size, height: size, borderRadius: size / 2,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)',
+              shadowColor: C.accent, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
+            }}
+          >
+            <Text style={{ fontSize: size * 0.36, fontWeight: '900', color: '#fff' }}>{initials}</Text>
+          </LinearGradient>
+        )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
