@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { format, subDays, isWithinInterval, parseISO, startOfDay, endOfDay, startOfMonth, endOfMonth, eachDayOfInterval, lastDayOfMonth, isSameMonth, isSameDay, addMonths } from 'date-fns';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { format, subDays, isWithinInterval, parseISO, startOfDay, endOfDay, startOfMonth, endOfMonth, eachDayOfInterval, lastDayOfMonth, isSameMonth, isSameDay, addMonths, startOfYear, endOfYear, startOfWeek, endOfWeek } from 'date-fns';
 import { 
   View, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, 
   LayoutAnimation, useColorScheme, Platform, PanResponder, Animated, Text, 
-  RefreshControl, Modal
+  RefreshControl, Modal, Share
 } from 'react-native';
 import {
   ChevronLeft, ChevronRight, Search, Calendar, Filter, X,
   FileText, Hash, TrendingUp, TrendingDown, Clock, Tag,
   Smile, Meh, Frown, Zap, PenTool, Edit3, MessageSquare, ChevronDown,
-  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp
+  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp, Share2
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -17,13 +17,153 @@ import { API_URL } from '../Constants';
 import { MainLayout } from '../layouts/MainLayout';
 import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
 import Svg, { Path, Defs, LinearGradient, Stop, Polygon } from 'react-native-svg';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 
 // Gluestack Shim or local components
 import { Box } from '../components/ui/box';
 import { VStack } from '../components/ui/vstack';
 import { HStack } from '../components/ui/hstack';
 
-// ── Daily group card (extracted for memoization) ────────────────────────────────
+// ── PnL Card Share Component ──────────────────────────────────────────────────
+type PeriodKey = 'daily' | 'weekly' | 'monthly' | 'yearly';
+type ModeKey = 'growth' | 'detail';
+
+function filterTradesByPeriod(trades: any[], period: PeriodKey) {
+  const now = new Date();
+  let from: Date, to: Date;
+  if (period === 'daily') { from = startOfDay(now); to = endOfDay(now); }
+  else if (period === 'weekly') { from = startOfWeek(now, { weekStartsOn: 1 }); to = endOfWeek(now, { weekStartsOn: 1 }); }
+  else if (period === 'monthly') { from = startOfMonth(now); to = endOfMonth(now); }
+  else { from = startOfYear(now); to = endOfYear(now); }
+  return trades.filter(t => {
+    const d = parseISO(t.closeTime || t.openTime || t.time || '');
+    return isWithinInterval(d, { start: from, end: to });
+  });
+}
+
+function computePnlStats(trades: any[]) {
+  const totalPnl = trades.reduce((s, t) => s + (t.profit || 0), 0);
+  const wins = trades.filter(t => (t.profit || 0) > 0).length;
+  const winRate = trades.length > 0 ? Math.round((wins / trades.length) * 100) : 0;
+  const dayMap: Record<string, number> = {};
+  trades.forEach(t => {
+    const d = (t.closeTime || t.openTime || t.time || '').substring(0, 10);
+    dayMap[d] = (dayMap[d] || 0) + (t.profit || 0);
+  });
+  const days = Object.keys(dayMap).length;
+  const avgDaily = days > 0 ? totalPnl / days : 0;
+  const cumulative: number[] = [0];
+  let running = 0;
+  trades.sort((a, b) => (a.closeTime || a.openTime || '').localeCompare(b.closeTime || b.openTime || '')).forEach(t => { running += (t.profit || 0); cumulative.push(running); });
+  return { totalPnl, winRate, tradeCount: trades.length, avgDaily, cumulative };
+}
+
+const PnLCard = React.forwardRef<ViewShot, { trades: any[], period: PeriodKey, mode: ModeKey, userName: string }>(
+  ({ trades, period, mode, userName }, ref) => {
+    const filtered = useMemo(() => filterTradesByPeriod(trades, period), [trades, period]);
+    const { totalPnl, winRate, tradeCount, avgDaily, cumulative } = useMemo(() => computePnlStats(filtered), [filtered]);
+    const isPos = totalPnl >= 0;
+    const periodLabels: Record<PeriodKey, string> = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' };
+    const periodSubLabels: Record<PeriodKey, string> = {
+      daily: format(new Date(), 'MMM d, yyyy'),
+      weekly: `${format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')} – ${format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'MMM d')}`,
+      monthly: format(new Date(), 'MMMM yyyy'),
+      yearly: format(new Date(), 'yyyy'),
+    };
+
+    // SVG equity curve
+    const W = 320, H = 70;
+    const svgPath = useMemo(() => {
+      if (cumulative.length < 2) return '';
+      const minV = Math.min(...cumulative), maxV = Math.max(...cumulative);
+      const range = maxV - minV || 1;
+      const pts = cumulative.map((v, i) => ({
+        x: (i / (cumulative.length - 1)) * W,
+        y: H - 8 - ((v - minV) / range) * (H - 16)
+      }));
+      return pts.reduce((d, pt, i) => i === 0 ? `M${pt.x},${pt.y}` : `${d} L${pt.x},${pt.y}`, '');
+    }, [cumulative]);
+    const growthPct = tradeCount > 0 && totalPnl !== 0 ? Math.abs(totalPnl / 10).toFixed(1) : '0.0'; // simplified growth
+
+    return (
+      <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
+        <View style={{ width: 340, borderRadius: 24, overflow: 'hidden', backgroundColor: '#0a0b0e' }}>
+          <ExpoLinearGradient
+            colors={isPos ? ['#052e16', '#0a0b0e'] : ['#2d0a0a', '#0a0b0e']}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+
+          {/* Equity curve background */}
+          {svgPath !== '' && (
+            <View style={{ position: 'absolute', bottom: 44, left: 0, right: 0, opacity: 0.12 }}>
+              <Svg width={W} height={H}>
+                <Path d={svgPath} stroke={isPos ? '#10b981' : '#ef4444'} strokeWidth={2} fill="none" />
+              </Svg>
+            </View>
+          )}
+
+          <View style={{ padding: 24 }}>
+            {/* Header row */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>TJ</Text>
+                </View>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>TimeJournal</Text>
+              </View>
+              <View style={{ backgroundColor: isPos ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{periodLabels[period]}</Text>
+              </View>
+            </View>
+
+            {/* Main P&L */}
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4, textTransform: 'uppercase' }}>Net P&L</Text>
+            <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 40, fontWeight: '900', letterSpacing: -1, marginBottom: 2 }}>
+              {isPos ? '+' : '-'}${Math.abs(totalPnl).toFixed(2)}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 }}>
+              <View style={{ backgroundColor: isPos ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {isPos ? <ArrowUp size={10} color="#10b981" /> : <ArrowDown size={10} color="#ef4444" />}
+                <Text style={{ color: isPos ? '#10b981' : '#ef4444', fontSize: 10, fontWeight: '900' }}>{isPos ? '+' : '-'}{growthPct}%</Text>
+              </View>
+              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '600' }}>{periodSubLabels[period]}</Text>
+            </View>
+
+            {/* Detail stats — only in 'detail' mode */}
+            {mode === 'detail' && (
+              <>
+                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 16 }} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  {[
+                    { label: 'Win Rate', value: `${winRate}%` },
+                    { label: 'Trades', value: `${tradeCount}` },
+                    { label: 'Avg/Day', value: `${avgDaily >= 0 ? '+' : ''}$${Math.abs(avgDaily).toFixed(0)}` },
+                  ].map((s, i) => (
+                    <View key={i} style={{ alignItems: 'center' }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 9, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</Text>
+                      <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '900' }}>{s.value}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginTop: 16, marginBottom: 12 }} />
+              </>
+            )}
+
+            {/* Watermark */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: mode === 'growth' ? 20 : 0 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 9, fontWeight: '600' }}>@{userName}</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.15)', fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>timejournal.site</Text>
+            </View>
+          </View>
+        </View>
+      </ViewShot>
+    );
+  }
+);
+
+// ── Daily group card (extracted for memoization) ──────────────────────────────────
 const DailyGroupCard = React.memo(({
   group, isDark, isExp, date, onToggleDay, journalData, saveNote, toggleDailyTag, addTag, deleteTag, onOpenRecap
 }: {
@@ -538,6 +678,26 @@ const HistoryScreen = React.memo(() => {
   const [isEditing, setIsEditing] = useState(false); // For manual journal entry
   const [form, setForm] = useState({ id: "", symbol: "EURUSD", type: "BUY", pnl: "", setup: "Breakout" }); // For manual journal entry
 
+  // Share PnL Card State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharePeriod, setSharePeriod] = useState<PeriodKey>('monthly');
+  const [shareMode, setShareMode] = useState<ModeKey>('detail');
+  const [isSharing, setIsSharing] = useState(false);
+  const cardRef = useRef<any>(null);
+
+  const shareCard = async () => {
+    if (!cardRef.current) return;
+    setIsSharing(true);
+    try {
+      const uri = await cardRef.current.capture();
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share PnL Card' });
+      }
+    } catch (e) { console.error('Share error:', e); }
+    finally { setIsSharing(false); }
+  };
+
   // Trade Recap State
   const [recapModalVisible, setRecapModalVisible] = useState(false);
   const [selectedTradeForRecap, setSelectedTradeForRecap] = useState<any>(null);
@@ -892,13 +1052,14 @@ const HistoryScreen = React.memo(() => {
           })}
         </View>
 
-        {/* Quick Date Filters */}
+        {/* Quick Date Filters + Share button */}
         {activeTab === 'JOURNAL' && (
-          <View style={{ height: 32, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false} 
               contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}
+              style={{ flex: 1 }}
             >
               {[
                 { label: 'All Time', action: () => { setStartDate(null); setEndDate(null); }, active: !startDate && !endDate },
@@ -924,6 +1085,12 @@ const HistoryScreen = React.memo(() => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowShareModal(true); }}
+              style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.08)', borderWidth: 1, borderColor: isDark ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)', flexShrink: 0 }}
+            >
+              <Share2 size={14} color="#6366f1" />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1253,6 +1420,42 @@ const HistoryScreen = React.memo(() => {
                </TouchableOpacity>
             </ScrollView>
          </View>
+      </Modal>
+
+      {/* ── Share PnL Card Modal ─────────────────────────────────────────── */}
+      <Modal visible={showShareModal} transparent animationType="slide" onRequestClose={() => setShowShareModal(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <View style={{ backgroundColor: isDark ? '#0f172a' : '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 }}>
+            <View style={{ width: 36, height: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#f8fafc' : '#0f172a' }}>Share PnL Card</Text>
+              <TouchableOpacity onPress={() => setShowShareModal(false)}><X size={20} color={isDark ? '#64748b' : '#94a3b8'} /></TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Period</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+              {(['daily', 'weekly', 'monthly', 'yearly'] as PeriodKey[]).map(p => (
+                <TouchableOpacity key={p} onPress={() => { Haptics.selectionAsync(); setSharePeriod(p); }} style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: sharePeriod === p ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), borderWidth: 1, borderColor: sharePeriod === p ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0') }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: sharePeriod === p ? '#fff' : (isDark ? '#94a3b8' : '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5 }}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Content</Text>
+            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginBottom: 20 }}>
+              {([{ key: 'growth' as ModeKey, label: 'Growth Only' }, { key: 'detail' as ModeKey, label: 'Full Detail' }]).map(m => (
+                <TouchableOpacity key={m.key} onPress={() => { Haptics.selectionAsync(); setShareMode(m.key); }} style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: shareMode === m.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: shareMode === m.key ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b' }}>{m.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ alignItems: 'center', marginBottom: 24 }}>
+              <PnLCard ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} userName="trader" />
+            </View>
+            <TouchableOpacity onPress={shareCard} disabled={isSharing} style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+              {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
+              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }}>{isSharing ? 'Preparing...' : 'Share Card'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </MainLayout>
   );
