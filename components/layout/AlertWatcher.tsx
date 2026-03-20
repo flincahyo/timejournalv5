@@ -186,8 +186,13 @@ function fireAlert(alert: any, symbol: string, direction: string, bodyText: stri
         }));
     }
 
-    // 3. Send Expo push notification to mobile via backend
-    apiPost("/api/alerts/fire-push", { alertId: alert.id, title, body: bodyText }).catch(() => {});
+    // 3. Send Expo push notification to mobile via server-side proxy (avoids CORS)
+    const token = typeof window !== "undefined" ? localStorage.getItem("uj_token") : null;
+    fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: "fire-push", alertId: alert.id, title, body: bodyText }),
+    }).then(r => r.json()).then(d => console.log("[FIRE-PUSH] result:", d)).catch(e => console.error("[FIRE-PUSH] error:", e));
 
     // 4. Play sound
     const soundUrl = alert.soundUri || (alert as any).sound;

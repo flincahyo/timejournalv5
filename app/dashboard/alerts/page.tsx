@@ -196,8 +196,12 @@ export default function AlertsPage() {
         type: alert.trigger === "Above" ? "bullish" : "bearish"
       });
     }
-    // Also send push notification to mobile
-    apiPost("/api/alerts/test-push", { alertId: alert.id }).catch(() => {});
+    // Also send push notification to mobile via server-side proxy (avoids CORS with direct backend call)
+    fetch("/api/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("uj_token")}` },
+      body: JSON.stringify({ endpoint: "test-push", alertId: alert.id }),
+    }).then(r => r.json()).then(d => console.log("[TEST-PUSH] result:", d)).catch(e => console.error("[TEST-PUSH] error:", e));
   };
 
   const handleAddCandleAlert = (e: React.FormEvent) => {
