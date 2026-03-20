@@ -82,17 +82,20 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
   const scrollRef = useRef<ScrollView>(null);
   const indicatorAnim = useRef(new Animated.Value(initialTab)).current;
   
-  // Notification & Sound State (Centralized)
+  // Notification & Sound State (Centralized) — synced with AlertsScreen
+  const WEB_URL = 'https://timejournal.site';
+  const BUILTIN_SOUNDS = [
+    { id: `${WEB_URL}/sounds/alert.mp3`,  name: 'Standard Alert' },
+    { id: `${WEB_URL}/sounds/modern.mp3`, name: 'Modern notification' },
+    { id: `${WEB_URL}/sounds/beep.mp3`,   name: 'Digital beep' },
+    { id: `${WEB_URL}/sounds/chime.mp3`,  name: 'Success chime' },
+  ];
   const [isNotifModalVisible, setNotifModalVisible] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(true);
-  const [defaultPriceSound, setDefaultPriceSound] = useState('default');
-  const [defaultMomentumSound, setDefaultMomentumSound] = useState('momentum');
-  const [defaultNewsSound, setDefaultNewsSound] = useState('default');
-  const [availableSounds, setAvailableSounds] = useState<any[]>([
-    { id: 'default', name: 'Default Signal', url: null },
-    { id: 'classic', name: 'Classic Ping', url: null },
-    { id: 'momentum', name: 'Momentum Boom', url: null },
-  ]);
+  const [defaultPriceSound, setDefaultPriceSound] = useState(BUILTIN_SOUNDS[0].id);
+  const [defaultMomentumSound, setDefaultMomentumSound] = useState(BUILTIN_SOUNDS[0].id);
+  const [defaultNewsSound, setDefaultNewsSound] = useState(BUILTIN_SOUNDS[0].id);
+  const [availableSounds, setAvailableSounds] = useState<any[]>(BUILTIN_SOUNDS);
 
   // Settings Load
   React.useEffect(() => {
@@ -100,16 +103,11 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
       try {
         const token = await AsyncStorage.getItem('userToken');
         
-        // Load custom sounds list
+        // Load custom sounds list — append after built-ins
         const resSounds = await fetch(`${API_URL}/auth/sounds`, { headers: { Authorization: `Bearer ${token}` } });
         const dataSounds = await resSounds.json();
-        if (dataSounds.custom_sounds) {
-          setAvailableSounds([
-            { id: 'default', name: 'Default Signal', url: null },
-            { id: 'classic', name: 'Classic Ping', url: null },
-            { id: 'momentum', name: 'Momentum Boom', url: null },
-            ...dataSounds.custom_sounds
-          ]);
+        if (dataSounds.custom_sounds && dataSounds.custom_sounds.length > 0) {
+          setAvailableSounds([...BUILTIN_SOUNDS, ...dataSounds.custom_sounds]);
         }
 
         // Load persisted audio/news settings
@@ -735,11 +733,13 @@ function NotificationSettingsModal({
 
   const playPreview = async (soundUrl: string | null, id: string) => {
     try {
+      // Support new format where id IS the url, and old format with separate .url field
+      const resolvedUrl = soundUrl || (id && id.startsWith('http') ? id : null);
       if (isPlaying === id) { if (playerRef.current) playerRef.current.pause(); setIsPlaying(null); return; }
-      if (soundUrl) {
+      if (resolvedUrl) {
         const { createAudioPlayer } = await import('expo-audio');
-        if (!playerRef.current) playerRef.current = createAudioPlayer(soundUrl);
-        else playerRef.current.replace(soundUrl);
+        if (!playerRef.current) playerRef.current = createAudioPlayer(resolvedUrl);
+        else playerRef.current.replace(resolvedUrl);
         setIsPlaying(id);
         playerRef.current.play();
         const sub = playerRef.current.addListener('playbackStatusUpdate', (s: any) => {
@@ -755,6 +755,15 @@ function NotificationSettingsModal({
 
   const testPushNotification = async () => {
     import('expo-haptics').then(Haptics => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+    // Play the currently selected price sound (which uses full URL in built-in sounds)
+    const soundUrl = priceSound && priceSound.startsWith('http') ? priceSound : null;
+    if (soundUrl) {
+      try {
+        const { createAudioPlayer } = await import('expo-audio');
+        const player = createAudioPlayer(soundUrl);
+        player.play();
+      } catch (_) {}
+    }
     try {
       const Notifications = await import('expo-notifications');
       await Notifications.scheduleNotificationAsync({
@@ -835,12 +844,12 @@ function NotificationSettingsModal({
                     </TouchableOpacity>
                   </View>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                     {availableSounds.map((s: any) => (
-                        <TouchableOpacity key={s.id} onPress={() => { setPriceSound(s.id); playPreview(s.url, s.id); }} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: priceSound === s.id ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                           <Music size={12} color={priceSound === s.id ? '#fff' : textM} />
-                           <Text style={{ fontSize: 11, fontWeight: '700', color: priceSound === s.id ? '#fff' : textM }}>{s.name}</Text>
-                        </TouchableOpacity>
-                     ))}
+               {availableSounds.map((s: any) => (
+                  <TouchableOpacity key={s.id} onPress={() => { setPriceSound(s.id); playPreview(s.url, s.id); }} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: priceSound === s.id ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                     <Music size={12} color={priceSound === s.id ? '#fff' : textM} />
+                     <Text style={{ fontSize: 11, fontWeight: '700', color: priceSound === s.id ? '#fff' : textM }}>{s.name}</Text>
+                  </TouchableOpacity>
+               ))}
                   </ScrollView>
                </View>
 
