@@ -753,32 +753,62 @@ function NotificationSettingsModal({
     } catch (e) { console.log('Playback error'); }
   };
 
-  const testPushNotification = async () => {
+  const registerAndShowPushToken = async () => {
+    import('expo-haptics').then(H => H.impactAsync(H.ImpactFeedbackStyle.Medium));
+    const { Alert: RNAlert } = await import('react-native');
+    try {
+      const Notifications = await import('expo-notifications');
+      const Constants = (await import('expo-constants')).default;
+
+      // Request permission
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        RNAlert.alert('❌ Permission Denied', `Push permission status: ${status}\n\nGo to Android Settings → Apps → TimeJournal → Notifications → Enable`);
+        return;
+      }
+
+      // Get token
+      const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? 'bbe7e363-2fca-4820-88c6-06f988ceb456';
+      RNAlert.alert('⏳ Getting Token...', `projectId: ${projectId}`);
+      
+      const result = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = result.data;
+
+      // Register to backend
+      const jwt = await AsyncStorage.getItem('userToken');
+      let backendMsg = 'No JWT — not registered';
+      if (jwt) {
+        const res = await fetch(`${API_URL}/push-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+          body: JSON.stringify({ token }),
+        });
+        const data = await res.json();
+        backendMsg = data.ok ? '✅ Registered to backend!' : `❌ Backend error: ${JSON.stringify(data)}`;
+      }
+
+      RNAlert.alert('✅ Push Token', `${token}\n\n${backendMsg}`);
+    } catch (e: any) {
+      const { Alert: RNAlert2 } = await import('react-native');
+      RNAlert2.alert('❌ Push Token Error', e?.message || String(e));
+    }
+  };
+
+  const testLocalNotification = async () => {
     import('expo-haptics').then(Haptics => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
-    // Play the currently selected price sound (which uses full URL in built-in sounds)
     const soundUrl = priceSound && priceSound.startsWith('http') ? priceSound : null;
     if (soundUrl) {
-      try {
-        const { createAudioPlayer } = await import('expo-audio');
-        const player = createAudioPlayer(soundUrl);
-        player.play();
-      } catch (_) {}
+      try { const { createAudioPlayer } = await import('expo-audio'); createAudioPlayer(soundUrl).play(); } catch (_) {}
     }
     try {
       const Notifications = await import('expo-notifications');
       await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Test Signal Detected 🎯",
-          body: "Push notifications are active and working flawlessly on your device.",
-          sound: true,
-        },
+        content: { title: "Test Signal Detected 🎯", body: "Local notification is working correctly.", sound: true },
         trigger: null,
       });
-    } catch (e) {
-      console.warn("Test notification failed:", e);
-      alert("Failed to send test notification. Ensure permissions are granted.");
-    }
+    } catch (e) { alert("Failed to send test notification. Ensure permissions are granted."); }
   };
+
 
   const uploadToCategory = async (category: 'price' | 'momentum' | 'news') => {
     try {
@@ -890,17 +920,28 @@ function NotificationSettingsModal({
                </View>
             </View>
 
-            <View style={{ marginBottom: 32 }}>
+            <View style={{ marginBottom: 16, gap: 10 }}>
                <TouchableOpacity 
-                 onPress={testPushNotification}
+                 onPress={registerAndShowPushToken}
                  style={{ 
                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
                    backgroundColor: '#6366f1', paddingVertical: 16, borderRadius: 20,
                    shadowColor: '#6366f1', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }
                  }}
                >
-                 <Send size={18} color="#fff" />
-                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }}>Send Test Notification</Text>
+                 <Bell size={18} color="#fff" />
+                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }}>Register Push Token</Text>
+               </TouchableOpacity>
+               <TouchableOpacity 
+                 onPress={testLocalNotification}
+                 style={{ 
+                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                   backgroundColor: isDark ? '#1e293b' : '#f1f5f9', paddingVertical: 14, borderRadius: 20,
+                   borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0'
+                 }}
+               >
+                 <Send size={16} color={textM} />
+                 <Text style={{ color: textM, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Test Local Notification</Text>
                </TouchableOpacity>
             </View>
 
