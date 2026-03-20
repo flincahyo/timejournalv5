@@ -9,7 +9,7 @@ import {
   ChevronLeft, ChevronRight, Search, Calendar, Filter, X,
   FileText, Hash, TrendingUp, TrendingDown, Clock, Tag,
   Smile, Meh, Frown, Zap, PenTool, Edit3, MessageSquare, ChevronDown,
-  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp, Share2
+  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp, Share2, BarChart2, Crosshair
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -324,25 +324,45 @@ const TradeCardSingle = React.forwardRef<ViewShot, {
   const closeTime = trade.closeTime || trade.time || '';
   const duration = tradeDuration(openTime, closeTime);
   const CARD_WIDTH = 300;
+  const CH = 80; // chart height
 
-  // Mini equity path: just two points for a single trade
-  const tinyPath = `M0,30 L${CARD_WIDTH},${isPos ? 10 : 50}`;
+  // Bezier curve background: profit = rises left→right, loss = falls left→right
+  const bgChartPath = useMemo(() => {
+    if (isPos) {
+      // S-curve rising: starts bottom-left, rises to top-right
+      return `M0,${CH} C${CARD_WIDTH * 0.3},${CH} ${CARD_WIDTH * 0.5},0 ${CARD_WIDTH},0`;
+    } else {
+      // S-curve falling: starts top-left, falls to bottom-right
+      return `M0,0 C${CARD_WIDTH * 0.3},0 ${CARD_WIDTH * 0.5},${CH} ${CARD_WIDTH},${CH}`;
+    }
+  }, [isPos]);
+
   const gradColors: [string, string] = isPos ? tc.gradientPos : tc.gradientNeg;
 
   return (
     <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
       <View style={{ width: CARD_WIDTH, borderRadius: 24, overflow: 'hidden', backgroundColor: tc.bg }}>
         <ExpoLinearGradient colors={gradColors} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-        {/* Diagonal line decoration */}
-        <View style={{ position: 'absolute', bottom: 20, left: 0, right: 0, opacity: 0.07 }}>
-          <Svg width={CARD_WIDTH} height={60}>
-            <Path d={tinyPath} stroke={accentColor} strokeWidth={2} fill="none" strokeDasharray="4 4" />
+
+        {/* Background chart — behind P&L area */}
+        <View style={{ position: 'absolute', top: 50, left: 0, right: 0, opacity: 0.13 }}>
+          <Svg width={CARD_WIDTH} height={CH}>
+            <Path d={bgChartPath} stroke={accentColor} strokeWidth={2.5} fill="none" />
+            {/* Fill area under the chart */}
+            <Path
+              d={isPos
+                ? `M0,${CH} C${CARD_WIDTH * 0.3},${CH} ${CARD_WIDTH * 0.5},0 ${CARD_WIDTH},0 L${CARD_WIDTH},${CH} Z`
+                : `M0,0 C${CARD_WIDTH * 0.3},0 ${CARD_WIDTH * 0.5},${CH} ${CARD_WIDTH},${CH} L${CARD_WIDTH},0 Z`}
+              fill={accentColor}
+              opacity={0.15}
+            />
           </Svg>
         </View>
+
         {/* Glow orb */}
         {tc.glowColor && (
           <View style={[
-            { position: 'absolute', width: 110, height: 110, borderRadius: 55, backgroundColor: tc.glowColor, opacity: 0.14 },
+            { position: 'absolute', width: 110, height: 110, borderRadius: 55, backgroundColor: tc.glowColor, opacity: 0.13 },
             tc.glowPos === 'tr' ? { top: -30, right: -30 } :
             tc.glowPos === 'bl' ? { bottom: -30, left: -30 } :
             { top: -30, left: -30 }
@@ -350,36 +370,36 @@ const TradeCardSingle = React.forwardRef<ViewShot, {
         )}
 
         <View style={{ padding: 20 }}>
-          {/* Header */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          {/* Header: BrandLogo + badges */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <BrandLogo size={13} whiteJournal />
             <View style={{ flexDirection: 'row', gap: 6 }}>
-              <View style={{ backgroundColor: isLong ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: isLong ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)' }}>
+              <View style={{ backgroundColor: isLong ? 'rgba(16,185,129,0.18)' : 'rgba(239,68,68,0.18)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: isLong ? 'rgba(16,185,129,0.28)' : 'rgba(239,68,68,0.28)' }}>
                 <Text style={{ color: isLong ? '#10b981' : '#ef4444', fontSize: 8, fontWeight: '900', letterSpacing: 1 }}>{isLong ? 'LONG' : 'SHORT'}</Text>
               </View>
-              <View style={{ backgroundColor: `${accentColor}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: `${accentColor}30` }}>
+              <View style={{ backgroundColor: `${accentColor}18`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: `${accentColor}28` }}>
                 <Text style={{ color: accentColor, fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }}>{(trade.volume || trade.lots || 0).toFixed(2)} LOTS</Text>
               </View>
             </View>
           </View>
 
-          {/* Symbol + P&L */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-            <View>
-              <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>Symbol</Text>
-              <Text style={{ color: '#ffffff', fontSize: 28, fontWeight: '900', letterSpacing: -0.5 }}>{trade.symbol || '–'}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
+          {/* Main row: P&L (left, big, highlighted) + Symbol (right, small, dim) */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 }}>
+            <View style={{ flex: 1 }}>
               <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>P&L</Text>
-              <Text style={{ color: accentColor, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 }}>
+              <Text style={{ color: accentColor, fontSize: 36, fontWeight: '900', letterSpacing: -1 }}>
                 {isPos ? '+' : ''}${profit.toFixed(2)}
               </Text>
             </View>
+            <View style={{ alignItems: 'flex-end', paddingBottom: 4 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 8, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>Symbol</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 }}>{trade.symbol || '–'}</Text>
+            </View>
           </View>
 
-          {/* Price info */}
-          <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 12 }} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+          {/* Price stats */}
+          <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 10 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
             {[
               { label: 'Entry', value: (trade.openPrice || trade.open_price || 'N/A').toString() },
               { label: 'Exit', value: (trade.closePrice || trade.close_price || 'N/A').toString() },
@@ -392,7 +412,7 @@ const TradeCardSingle = React.forwardRef<ViewShot, {
             ))}
           </View>
 
-          {/* Date + Watermark */}
+          {/* Watermark */}
           <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 8 }} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '600' }}>
@@ -1745,9 +1765,13 @@ const HistoryScreen = React.memo(() => {
 
             {/* Tab Toggle */}
             <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginHorizontal: 24, marginBottom: 20 }}>
-              {[{ key: 'period' as const, label: '📈 Period' }, { key: 'trade' as const, label: '🎯 Single Trade' }].map(tab => (
+              {[
+                { key: 'period' as const, label: 'Period', icon: <BarChart2 size={13} color={shareTab === 'period' ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b'} /> },
+                { key: 'trade' as const, label: 'Single Trade', icon: <Crosshair size={13} color={shareTab === 'trade' ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b'} /> },
+              ].map(tab => (
                 <TouchableOpacity key={tab.key} onPress={() => { Haptics.selectionAsync(); setShareTab(tab.key); setSelectedTrade(null); }}
-                  style={{ flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: shareTab === tab.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
+                  style={{ flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: shareTab === tab.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
+                  {tab.icon}
                   <Text style={{ fontSize: 12, fontWeight: '800', color: shareTab === tab.key ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b' }}>{tab.label}</Text>
                 </TouchableOpacity>
               ))}
