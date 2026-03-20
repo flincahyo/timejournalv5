@@ -186,13 +186,8 @@ function fireAlert(alert: any, symbol: string, direction: string, bodyText: stri
         }));
     }
 
-    // 3. Send Expo push notification to mobile via server-side proxy (avoids CORS)
-    const token = typeof window !== "undefined" ? localStorage.getItem("uj_token") : null;
-    fetch("/api/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ endpoint: "fire-push", alertId: alert.id, title, body: bodyText }),
-    }).then(r => r.json()).then(d => console.log("[FIRE-PUSH] result:", d)).catch(e => console.error("[FIRE-PUSH] error:", e));
+
+    // Note: Push notification is handled by the backend _alert_evaluator_loop — no need to fire here too.
 
     // 4. Play sound
     const soundUrl = alert.soundUri || (alert as any).sound;
