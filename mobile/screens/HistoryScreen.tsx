@@ -28,10 +28,11 @@ import { HStack } from '../components/ui/hstack';
 
 // ── PnL Card Share Component ──────────────────────────────────────────────────
 import { BrandLogo } from '../components/BrandLogo';
+import { useWindowDimensions } from 'react-native';
 
 type PeriodKey = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type ModeKey = 'growth' | 'detail';
-type ThemeKey = 'dark' | 'aurora' | 'ocean';
+type ThemeKey = 'dark' | 'aurora' | 'ocean' | 'indigo';
 
 function filterTradesByPeriod(trades: any[], period: PeriodKey) {
   const now = new Date();
@@ -63,10 +64,7 @@ function computePnlStats(trades: any[]) {
   const cumulative: number[] = [0];
   let running = 0;
   sorted.forEach(t => { running += (t.profit || 0); cumulative.push(running); });
-  // Derive starting balance from first trade's balance field if available
-  const startBal = sorted.length > 0 ? ((sorted[0].balance || 0) - (sorted[0].profit || 0)) : 0;
-  const growthPct = startBal > 0 ? (totalPnl / startBal) * 100 : 0;
-  return { totalPnl, winRate, tradeCount: sorted.length, avgDaily, cumulative, growthPct };
+  return { totalPnl, winRate, tradeCount: sorted.length, avgDaily, cumulative };
 }
 
 // Equity curve SVG path helper
@@ -83,41 +81,59 @@ function buildSvgPath(cumulative: number[], W: number, H: number) {
 
 // ── Card theme configs ────────────────────────────────────────────────────────
 const CARD_THEMES: Record<ThemeKey, {
-  bg: string; gradient: [string, string, string?]; accentPos: string; accentNeg: string;
+  bg: string; gradientPos: [string, string]; gradientNeg: [string, string];
+  accentPos: string; accentNeg: string;
   labelColor: string; subColor: string; divider: string; watermarkColor: string;
+  glowColor?: string; glowPos?: 'tl' | 'tr' | 'bl' | 'br';
 }> = {
   dark: {
     bg: '#0a0b0e',
-    gradient: ['#0d1f12', '#0a0b0e'],
+    gradientPos: ['#0d1f12', '#0a0b0e'], gradientNeg: ['#1f0d0d', '#0a0b0e'],
     accentPos: '#10b981', accentNeg: '#ef4444',
     labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
     divider: 'rgba(255,255,255,0.07)', watermarkColor: 'rgba(255,255,255,0.18)',
   },
   aurora: {
     bg: '#0c0a1e',
-    gradient: ['#1a0a2e', '#0c0a1e'],
+    gradientPos: ['#1a0a2e', '#0c0a1e'], gradientNeg: ['#1f0a1a', '#0c0a1e'],
     accentPos: '#a78bfa', accentNeg: '#f472b6',
     labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
     divider: 'rgba(167,139,250,0.12)', watermarkColor: 'rgba(255,255,255,0.18)',
+    glowColor: '#7c3aed', glowPos: 'tr',
   },
   ocean: {
     bg: '#061822',
-    gradient: ['#0a2a3e', '#061822'],
+    gradientPos: ['#0a2a3e', '#061822'], gradientNeg: ['#1a0a0a', '#061822'],
     accentPos: '#38bdf8', accentNeg: '#f87171',
     labelColor: 'rgba(255,255,255,0.32)', subColor: 'rgba(255,255,255,0.28)',
     divider: 'rgba(56,189,248,0.1)', watermarkColor: 'rgba(255,255,255,0.18)',
+    glowColor: '#0284c7', glowPos: 'bl',
+  },
+  indigo: {
+    bg: '#1e1b4b',
+    gradientPos: ['#312e81', '#1e1b4b'], gradientNeg: ['#2d1b4b', '#1e1b4b'],
+    accentPos: '#10b981', accentNeg: '#ef4444',
+    labelColor: 'rgba(255,255,255,0.4)', subColor: 'rgba(255,255,255,0.3)',
+    divider: 'rgba(99,102,241,0.2)', watermarkColor: 'rgba(255,255,255,0.22)',
+    glowColor: '#6366f1', glowPos: 'tr',
   },
 };
 
-const THEME_NAMES: Record<ThemeKey, string> = { dark: 'Dark', aurora: 'Aurora', ocean: 'Ocean' };
-const THEME_KEYS: ThemeKey[] = ['dark', 'aurora', 'ocean'];
+const THEME_NAMES: Record<ThemeKey, string> = { dark: 'Dark', aurora: 'Aurora', ocean: 'Ocean', indigo: 'Indigo' };
+const THEME_KEYS: ThemeKey[] = ['dark', 'aurora', 'ocean', 'indigo'];
 
 // ── Single PnLCard (one theme) ────────────────────────────────────────────────
 const PnLCardSingle = React.forwardRef<ViewShot, {
   trades: any[]; period: PeriodKey; mode: ModeKey; theme: ThemeKey;
-}>(({ trades, period, mode, theme }, ref) => {
+  accountBalance: number; userName: string;
+}>(({ trades, period, mode, theme, accountBalance, userName }, ref) => {
   const filtered = useMemo(() => filterTradesByPeriod(trades, period), [trades, period]);
-  const { totalPnl, winRate, tradeCount, avgDaily, cumulative, growthPct } = useMemo(() => computePnlStats(filtered), [filtered]);
+  const { totalPnl, winRate, tradeCount, avgDaily, cumulative } = useMemo(() => computePnlStats(filtered), [filtered]);
+  // Growth %: (periodPnl / balanceAtPeriodStart) * 100
+  // balanceAtPeriodStart = currentAccountBalance - totalPnlForEntireHistory... approximation:
+  // If we only have periodPnl, use: startBal = accountBalance - totalPnl (approx start of period balance)
+  const startBal = accountBalance > 0 ? accountBalance - totalPnl : 0;
+  const growthPct = startBal > 0 ? (totalPnl / startBal) * 100 : 0;
   const tc = CARD_THEMES[theme];
   const isPos = totalPnl >= 0;
   const accentColor = isPos ? tc.accentPos : tc.accentNeg;
@@ -128,69 +144,70 @@ const PnLCardSingle = React.forwardRef<ViewShot, {
     monthly: format(new Date(), 'MMMM yyyy'),
     yearly: format(new Date(), 'yyyy'),
   };
-  const W = 320, H = 60;
-  const svgPath = useMemo(() => buildSvgPath(cumulative, W, H), [cumulative]);
-  const gradColors = isPos ? [tc.gradient[0], tc.gradient[1]] as [string, string] : [`${tc.accentNeg}18`, tc.bg] as [string, string];
+  const CARD_WIDTH = 300;
+  const svgPath = useMemo(() => buildSvgPath(cumulative, CARD_WIDTH, 60), [cumulative]);
+  const gradColors: [string, string] = isPos ? tc.gradientPos : tc.gradientNeg;
 
   return (
     <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
-      <View style={{ width: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: tc.bg }}>
+      <View style={{ width: CARD_WIDTH, borderRadius: 24, overflow: 'hidden', backgroundColor: tc.bg }}>
         <ExpoLinearGradient colors={gradColors} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-        {/* Subtle grid lines for aurora/ocean */}
-        {theme !== 'dark' && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.04 }}>
+        {/* Subtle horizontal lines */}
+        {(theme === 'aurora' || theme === 'ocean' || theme === 'indigo') && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.05 }}>
             {[0,1,2,3].map(i => <View key={i} style={{ position: 'absolute', left: 0, right: 0, top: `${25 * i}%`, height: 1, backgroundColor: accentColor }} />)}
           </View>
         )}
         {/* Equity curve bg */}
         {svgPath !== '' && (
-          <View style={{ position: 'absolute', bottom: 36, left: 0, right: 0, opacity: 0.1 }}>
-            <Svg width={W} height={H}>
+          <View style={{ position: 'absolute', bottom: 32, left: 0, right: 0, opacity: 0.1 }}>
+            <Svg width={CARD_WIDTH} height={60}>
               <Path d={svgPath} stroke={accentColor} strokeWidth={2} fill="none" />
             </Svg>
           </View>
         )}
-        {/* Glow dot for aurora */}
-        {theme === 'aurora' && (
-          <View style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, borderRadius: 70, backgroundColor: '#7c3aed', opacity: 0.12 }} />
-        )}
-        {theme === 'ocean' && (
-          <View style={{ position: 'absolute', bottom: -30, left: -30, width: 120, height: 120, borderRadius: 60, backgroundColor: '#0284c7', opacity: 0.15 }} />
+        {/* Glow orb */}
+        {tc.glowColor && (
+          <View style={[
+            { position: 'absolute', width: 130, height: 130, borderRadius: 65, backgroundColor: tc.glowColor, opacity: 0.14 },
+            tc.glowPos === 'tr' ? { top: -35, right: -35 } :
+            tc.glowPos === 'bl' ? { bottom: -35, left: -35 } :
+            tc.glowPos === 'tl' ? { top: -35, left: -35 } : { bottom: -35, right: -35 }
+          ]} />
         )}
 
-        <View style={{ padding: 22 }}>
+        <View style={{ padding: 20 }}>
           {/* Header */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <BrandLogo size={15} whiteJournal />
-            <View style={{ backgroundColor: `${accentColor}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: `${accentColor}30` }}>
-              <Text style={{ color: accentColor, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 }}>{periodLabels[period]}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <BrandLogo size={14} whiteJournal />
+            <View style={{ backgroundColor: `${accentColor}22`, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 7, borderWidth: 1, borderColor: `${accentColor}35` }}>
+              <Text style={{ color: accentColor, fontSize: 8, fontWeight: '900', letterSpacing: 1.2 }}>{periodLabels[period]}</Text>
             </View>
           </View>
 
-          {/* Growth-only mode — just the big % */}
+          {/* Growth-only mode */}
           {mode === 'growth' ? (
-            <View style={{ alignItems: 'flex-start', marginBottom: 18 }}>
-              <Text style={{ color: tc.labelColor, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Growth</Text>
-              <Text style={{ color: accentColor, fontSize: 52, fontWeight: '900', letterSpacing: -2, lineHeight: 56 }}>
+            <View style={{ alignItems: 'flex-start', marginBottom: 16 }}>
+              <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5 }}>Account Growth</Text>
+              <Text style={{ color: accentColor, fontSize: 48, fontWeight: '900', letterSpacing: -2, lineHeight: 52 }}>
                 {growthPct >= 0 ? '+' : ''}{growthPct.toFixed(2)}%
               </Text>
-              <Text style={{ color: tc.subColor, fontSize: 10, fontWeight: '600', marginTop: 4 }}>{periodSubLabels[period]}</Text>
+              <Text style={{ color: tc.subColor, fontSize: 9, fontWeight: '600', marginTop: 4 }}>{periodSubLabels[period]}</Text>
             </View>
           ) : (
             <>
-              {/* Full detail mode */}
-              <Text style={{ color: tc.labelColor, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>Net P&L</Text>
-              <Text style={{ color: accentColor, fontSize: 36, fontWeight: '900', letterSpacing: -1, marginBottom: 4 }}>
+              <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>Net P&L</Text>
+              <Text style={{ color: accentColor, fontSize: 34, fontWeight: '900', letterSpacing: -1, marginBottom: 4 }}>
                 {isPos ? '+' : ''}${totalPnl.toFixed(2)}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <View style={{ backgroundColor: `${accentColor}15`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  {isPos ? <ArrowUp size={9} color={accentColor} /> : <ArrowDown size={9} color={accentColor} />}
-                  <Text style={{ color: accentColor, fontSize: 10, fontWeight: '900' }}>{growthPct >= 0 ? '+' : ''}{growthPct.toFixed(2)}%</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 14 }}>
+                <View style={{ backgroundColor: `${accentColor}18`, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  {isPos ? <ArrowUp size={8} color={accentColor} /> : <ArrowDown size={8} color={accentColor} />}
+                  <Text style={{ color: accentColor, fontSize: 9, fontWeight: '900' }}>{growthPct >= 0 ? '+' : ''}{growthPct.toFixed(2)}%</Text>
                 </View>
-                <Text style={{ color: tc.subColor, fontSize: 10, fontWeight: '600' }}>{periodSubLabels[period]}</Text>
+                <Text style={{ color: tc.subColor, fontSize: 9, fontWeight: '600' }}>{periodSubLabels[period]}</Text>
               </View>
-              <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 14 }} />
+              <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 {[
                   { label: 'Win Rate', value: `${winRate}%` },
@@ -198,18 +215,18 @@ const PnLCardSingle = React.forwardRef<ViewShot, {
                   { label: 'Avg/Day', value: `${avgDaily >= 0 ? '+' : ''}$${Math.abs(avgDaily).toFixed(0)}` },
                 ].map((s, i) => (
                   <View key={i} style={{ alignItems: 'center' }}>
-                    <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{s.label}</Text>
-                    <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '900' }}>{s.value}</Text>
+                    <Text style={{ color: tc.labelColor, fontSize: 7, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>{s.label}</Text>
+                    <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900' }}>{s.value}</Text>
                   </View>
                 ))}
               </View>
-              <View style={{ height: 1, backgroundColor: tc.divider, marginTop: 14, marginBottom: 10 }} />
+              <View style={{ height: 1, backgroundColor: tc.divider, marginTop: 12, marginBottom: 8 }} />
             </>
           )}
 
           {/* Watermark */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: mode === 'growth' ? 8 : 0 }}>
-            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '600' }}>timejournal.site</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: mode === 'growth' ? 6 : 0 }}>
+            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '600' }}>@{userName || 'trader'}</Text>
             <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>TimeJournal App</Text>
           </View>
         </View>
@@ -218,17 +235,21 @@ const PnLCardSingle = React.forwardRef<ViewShot, {
   );
 });
 
-// ── Carousel wrapper (swipeable 3-card preview) ───────────────────────────────
+// ── Carousel wrapper (swipeable, full-width paging) ───────────────────────────
 const PnLCardCarousel = React.forwardRef<any, {
   trades: any[]; period: PeriodKey; mode: ModeKey;
   activeTheme: ThemeKey; onThemeChange: (t: ThemeKey) => void;
-}>(({ trades, period, mode, activeTheme, onThemeChange }, ref) => {
+  accountBalance: number; userName: string;
+}>(({ trades, period, mode, activeTheme, onThemeChange, accountBalance, userName }, ref) => {
+  const { width: winW } = useWindowDimensions();
+  // Modal has 24px padding each side, so content width = winW - 48
+  // We use winW as the page width (ScrollView is full-width via negative margin)
+  const pageW = winW;
+  const CARD_W = Math.min(winW - 64, 320); // card is at most 320, with 32px margin each side
   const scrollRef = useRef<ScrollView>(null);
-  const [currentIdx, setCurrentIdx] = useState(THEME_KEYS.indexOf(activeTheme));
-  const CARD_W = 320;
-  const cardRefs = useRef<any[]>([null, null, null]);
+  const [currentIdx, setCurrentIdx] = useState(Math.max(0, THEME_KEYS.indexOf(activeTheme)));
+  const cardRefs = useRef<any[]>(THEME_KEYS.map(() => null));
 
-  // expose capture of active card
   React.useImperativeHandle(ref, () => ({
     capture: () => {
       const r = cardRefs.current[currentIdx];
@@ -244,22 +265,31 @@ const PnLCardCarousel = React.forwardRef<any, {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={pageW}
+        snapToAlignment="center"
+        contentContainerStyle={{ paddingHorizontal: 0 }}
         onMomentumScrollEnd={e => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
-          setCurrentIdx(idx);
-          onThemeChange(THEME_KEYS[idx]);
+          const idx = Math.round(e.nativeEvent.contentOffset.x / pageW);
+          const clamped = Math.max(0, Math.min(idx, THEME_KEYS.length - 1));
+          setCurrentIdx(clamped);
+          onThemeChange(THEME_KEYS[clamped]);
         }}
       >
         {THEME_KEYS.map((tk, i) => (
-          <View key={tk} style={{ width: CARD_W }}>
-            <PnLCardSingle ref={el => { cardRefs.current[i] = el; }} trades={trades} period={period} mode={mode} theme={tk} />
+          <View key={tk} style={{ width: pageW, alignItems: 'center', justifyContent: 'center' }}>
+            <PnLCardSingle
+              ref={el => { cardRefs.current[i] = el; }}
+              trades={trades} period={period} mode={mode} theme={tk}
+              accountBalance={accountBalance} userName={userName}
+            />
           </View>
         ))}
       </ScrollView>
-      {/* Dots */}
+      {/* Indicator dots */}
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 }}>
         {THEME_KEYS.map((tk, i) => (
-          <View key={tk} style={{ width: currentIdx === i ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: currentIdx === i ? '#6366f1' : 'rgba(99,102,241,0.3)' }} />
+          <View key={tk} style={{ width: currentIdx === i ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: currentIdx === i ? '#6366f1' : 'rgba(99,102,241,0.3)' }} />
         ))}
       </View>
       <Text style={{ textAlign: 'center', fontSize: 9, fontWeight: '700', color: '#6366f1', marginTop: 4, letterSpacing: 0.5 }}>{THEME_NAMES[activeTheme]}</Text>
@@ -788,6 +818,8 @@ const HistoryScreen = React.memo(() => {
   const [shareMode, setShareMode] = useState<ModeKey>('detail');
   const [shareTheme, setShareTheme] = useState<ThemeKey>('dark');
   const [isSharing, setIsSharing] = useState(false);
+  const [accountBalance, setAccountBalance] = useState(0);
+  const [userName, setUserName] = useState('');
   const cardRef = useRef<any>(null);
 
   const shareCard = async () => {
@@ -829,6 +861,19 @@ const HistoryScreen = React.memo(() => {
       });
       const tradesData = await tradesRes.json();
       if (tradesData.trades) setTrades(tradesData.trades);
+
+      // Fetch user name and account balance for PnL card
+      try {
+        const [meRes, accRes] = await Promise.all([
+          fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_URL}/accounts`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const meData = await meRes.json();
+        if (meData.name) setUserName(meData.name.split(' ')[0].toLowerCase());
+        const accData = await accRes.json();
+        const activeAcc = (accData.accounts || []).find((a: any) => a.isActive);
+        if (activeAcc?.accountInfo?.balance) setAccountBalance(activeAcc.accountInfo.balance);
+      } catch (_) {}
 
       // Fetch Journal
       const journalRes = await fetch(`${API_URL}/journal`, {
@@ -1553,7 +1598,7 @@ const HistoryScreen = React.memo(() => {
               ))}
             </View>
             <View style={{ marginBottom: 24, marginHorizontal: -24 }}>
-              <PnLCardCarousel ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} activeTheme={shareTheme} onThemeChange={(t) => setShareTheme(t)} />
+              <PnLCardCarousel ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} activeTheme={shareTheme} onThemeChange={(t) => setShareTheme(t)} accountBalance={accountBalance} userName={userName} />
             </View>
             <TouchableOpacity onPress={shareCard} disabled={isSharing} style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
               {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
