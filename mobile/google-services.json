@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "742837909981",
+    "project_id": "timejournal-272be",
+    "storage_bucket": "timejournal-272be.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:742837909981:android:34000fe2d34287cf7ade34",
+        "android_client_info": {
+          "package_name": "com.bluskrin.timejournal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAl_43OgZfNFWhhlcamcYsjtZlQeo3fwkc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
