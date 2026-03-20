@@ -1364,6 +1364,7 @@ const HistoryScreen = React.memo(() => {
         <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 20, padding: 4, marginBottom: 20 }}>
           {(['JOURNAL', 'CALENDAR'] as const).map(t => {
             const isActive = activeTab === t;
+            const iconColor = isActive ? (isDark ? '#ffffff' : '#0f172a') : (isDark ? '#64748b' : '#94a3b8');
             return (
               <TouchableOpacity
                 key={t}
@@ -1374,7 +1375,10 @@ const HistoryScreen = React.memo(() => {
                   shadowColor: '#000', shadowOpacity: isActive ? 0.05 : 0, shadowRadius: 4,
                 }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '900', color: isActive ? (isDark ? '#ffffff' : '#0f172a') : (isDark ? '#64748b' : '#94a3b8'), letterSpacing: 0.5 }}>{t}</Text>
+                {t === 'JOURNAL'
+                  ? <FileText size={18} color={iconColor} />
+                  : <Calendar size={18} color={iconColor} />
+                }
               </TouchableOpacity>
             );
           })}
