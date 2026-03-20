@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.bluskrin.timejournal",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#1a1514",
         "foregroundImage": "./assets/android-icon-foreground.png",
