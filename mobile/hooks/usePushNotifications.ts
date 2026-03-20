@@ -69,19 +69,31 @@ export const usePushNotifications = () => {
         });
 
         const token = await registerForPushNotificationsAsync();
+        console.log('[PUSH] token obtained:', token ? token.substring(0, 30) + '...' : 'null');
         if (token) {
           setExpoPushToken(token);
           const jwt = await AsyncStorage.getItem('userToken');
+          console.log('[PUSH] jwt present:', !!jwt, 'API_URL:', API_URL);
           if (jwt) {
-            await fetch(`${API_URL}/push-token`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${jwt}`
-              },
-              body: JSON.stringify({ token }),
-            });
+            try {
+              const res = await fetch(`${API_URL}/push-token`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${jwt}`
+                },
+                body: JSON.stringify({ token }),
+              });
+              const data = await res.json();
+              console.log('[PUSH] register result:', JSON.stringify(data));
+            } catch (regErr) {
+              console.error('[PUSH] register error:', regErr);
+            }
+          } else {
+            console.warn('[PUSH] No JWT found — push token NOT registered to backend.');
           }
+        } else {
+          console.warn('[PUSH] No token obtained — device may not support push or permission denied.');
         }
 
         notificationListener.current = Notifications.addNotificationReceivedListener(note => {

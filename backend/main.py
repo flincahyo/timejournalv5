@@ -951,6 +951,7 @@ async def register_push_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Register Expo push token for the current user."""
+    print(f"DEBUG push-token POST: user={user.id}, token={req.token[:30]}...")
     s = await db.get(UserSettings, user.id)
     if not s:
         s = UserSettings(user_id=user.id, theme="light", news_settings={})
@@ -960,6 +961,17 @@ async def register_push_token(
     await db.commit()
     print(f"🔔 Push token registered for user {user.id}: {req.token[:30]}...")
     return {"ok": True}
+
+@app.get("/api/push-token")
+async def get_push_token(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Debug: Check the current push token for the authenticated user."""
+    s = await db.get(UserSettings, user.id)
+    token = s.expo_push_token if s else None
+    print(f"DEBUG push-token GET: user={user.id}, has_token={bool(token)}")
+    return {"ok": True, "has_token": bool(token), "token_preview": token[:20] + '...' if token else None}
 
 
 @app.get("/api/mt5/symbols")
