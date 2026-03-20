@@ -458,7 +458,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
               <AvatarBadge name={user?.name || 'Trader'} image={user?.image} size={46} onPress={onOpenSettings} />
               <View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light, letterSpacing: 0.5 }}>Welcome back</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light, letterSpacing: 0.5 }}>{(() => { const h = new Date().getHours(); return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : h < 21 ? 'Good evening' : 'Good night'; })()}</Text>
                   <WavingHand />
                 </View>
                 <Text style={{ fontSize: 15, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, letterSpacing: -0.3 }}>{(user?.name || 'Trader').split(' ')[0]}</Text>
