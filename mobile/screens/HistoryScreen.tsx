@@ -297,6 +297,159 @@ const PnLCardCarousel = React.forwardRef<any, {
   );
 });
 
+// ── Trade Duration Helper ─────────────────────────────────────────────────────
+function tradeDuration(openTime: string, closeTime: string): string {
+  try {
+    const open = new Date(openTime), close = new Date(closeTime);
+    const diffMs = close.getTime() - open.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ${hrs % 24}h`;
+  } catch { return '–'; }
+}
+
+// ── Single Trade Card (one theme) ─────────────────────────────────────────────
+const TradeCardSingle = React.forwardRef<ViewShot, {
+  trade: any; theme: ThemeKey; userName: string;
+}>(({ trade, theme, userName }, ref) => {
+  const tc = CARD_THEMES[theme];
+  const profit = trade.profit || 0;
+  const isPos = profit >= 0;
+  const accentColor = isPos ? tc.accentPos : tc.accentNeg;
+  const isLong = (trade.type || '').toLowerCase() === 'buy';
+  const openTime = trade.openTime || trade.time || '';
+  const closeTime = trade.closeTime || trade.time || '';
+  const duration = tradeDuration(openTime, closeTime);
+  const CARD_WIDTH = 300;
+
+  // Mini equity path: just two points for a single trade
+  const tinyPath = `M0,30 L${CARD_WIDTH},${isPos ? 10 : 50}`;
+  const gradColors: [string, string] = isPos ? tc.gradientPos : tc.gradientNeg;
+
+  return (
+    <ViewShot ref={ref as any} options={{ format: 'png', quality: 1 }}>
+      <View style={{ width: CARD_WIDTH, borderRadius: 24, overflow: 'hidden', backgroundColor: tc.bg }}>
+        <ExpoLinearGradient colors={gradColors} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+        {/* Diagonal line decoration */}
+        <View style={{ position: 'absolute', bottom: 20, left: 0, right: 0, opacity: 0.07 }}>
+          <Svg width={CARD_WIDTH} height={60}>
+            <Path d={tinyPath} stroke={accentColor} strokeWidth={2} fill="none" strokeDasharray="4 4" />
+          </Svg>
+        </View>
+        {/* Glow orb */}
+        {tc.glowColor && (
+          <View style={[
+            { position: 'absolute', width: 110, height: 110, borderRadius: 55, backgroundColor: tc.glowColor, opacity: 0.14 },
+            tc.glowPos === 'tr' ? { top: -30, right: -30 } :
+            tc.glowPos === 'bl' ? { bottom: -30, left: -30 } :
+            { top: -30, left: -30 }
+          ]} />
+        )}
+
+        <View style={{ padding: 20 }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <BrandLogo size={13} whiteJournal />
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <View style={{ backgroundColor: isLong ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: isLong ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)' }}>
+                <Text style={{ color: isLong ? '#10b981' : '#ef4444', fontSize: 8, fontWeight: '900', letterSpacing: 1 }}>{isLong ? 'LONG' : 'SHORT'}</Text>
+              </View>
+              <View style={{ backgroundColor: `${accentColor}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: `${accentColor}30` }}>
+                <Text style={{ color: accentColor, fontSize: 8, fontWeight: '900', letterSpacing: 0.5 }}>{(trade.volume || trade.lots || 0).toFixed(2)} LOTS</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Symbol + P&L */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+            <View>
+              <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>Symbol</Text>
+              <Text style={{ color: '#ffffff', fontSize: 28, fontWeight: '900', letterSpacing: -0.5 }}>{trade.symbol || '–'}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ color: tc.labelColor, fontSize: 8, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>P&L</Text>
+              <Text style={{ color: accentColor, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 }}>
+                {isPos ? '+' : ''}${profit.toFixed(2)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Price info */}
+          <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 12 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            {[
+              { label: 'Entry', value: (trade.openPrice || trade.open_price || 'N/A').toString() },
+              { label: 'Exit', value: (trade.closePrice || trade.close_price || 'N/A').toString() },
+              { label: 'Duration', value: duration },
+            ].map((s, i) => (
+              <View key={i} style={{ alignItems: i === 2 ? 'flex-end' : i === 0 ? 'flex-start' : 'center' }}>
+                <Text style={{ color: tc.labelColor, fontSize: 7, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{s.label}</Text>
+                <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '800' }}>{s.value}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Date + Watermark */}
+          <View style={{ height: 1, backgroundColor: tc.divider, marginBottom: 8 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '600' }}>
+              @{userName || 'trader'} · {closeTime ? format(new Date(closeTime), 'MMM d, yyyy') : ''}
+            </Text>
+            <Text style={{ color: tc.watermarkColor, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>TimeJournal App</Text>
+          </View>
+        </View>
+      </View>
+    </ViewShot>
+  );
+});
+
+// ── Trade Card Carousel ────────────────────────────────────────────────────────
+const TradeCardCarousel = React.forwardRef<any, {
+  trade: any; activeTheme: ThemeKey; onThemeChange: (t: ThemeKey) => void; userName: string;
+}>(({ trade, activeTheme, onThemeChange, userName }, ref) => {
+  const { width: winW } = useWindowDimensions();
+  const pageW = winW;
+  const [currentIdx, setCurrentIdx] = useState(Math.max(0, THEME_KEYS.indexOf(activeTheme)));
+  const cardRefs = useRef<any[]>(THEME_KEYS.map(() => null));
+
+  React.useImperativeHandle(ref, () => ({
+    capture: () => {
+      const r = cardRefs.current[currentIdx];
+      if (r?.capture) return r.capture();
+      return Promise.reject('no ref');
+    }
+  }));
+
+  return (
+    <View>
+      <ScrollView
+        horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+        decelerationRate="fast" snapToInterval={pageW} snapToAlignment="center"
+        onMomentumScrollEnd={e => {
+          const idx = Math.max(0, Math.min(Math.round(e.nativeEvent.contentOffset.x / pageW), THEME_KEYS.length - 1));
+          setCurrentIdx(idx);
+          onThemeChange(THEME_KEYS[idx]);
+        }}
+      >
+        {THEME_KEYS.map((tk, i) => (
+          <View key={tk} style={{ width: pageW, alignItems: 'center', justifyContent: 'center' }}>
+            <TradeCardSingle ref={el => { cardRefs.current[i] = el; }} trade={trade} theme={tk} userName={userName} />
+          </View>
+        ))}
+      </ScrollView>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+        {THEME_KEYS.map((_, i) => (
+          <View key={i} style={{ width: currentIdx === i ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: currentIdx === i ? '#6366f1' : 'rgba(99,102,241,0.3)' }} />
+        ))}
+      </View>
+      <Text style={{ textAlign: 'center', fontSize: 9, fontWeight: '700', color: '#6366f1', marginTop: 4, letterSpacing: 0.5 }}>{THEME_NAMES[activeTheme]}</Text>
+    </View>
+  );
+});
+
 // ── Daily group card (extracted for memoization) ──────────────────────────────────
 const DailyGroupCard = React.memo(({
   group, isDark, isExp, date, onToggleDay, journalData, saveNote, toggleDailyTag, addTag, deleteTag, onOpenRecap
@@ -820,16 +973,21 @@ const HistoryScreen = React.memo(() => {
   const [isSharing, setIsSharing] = useState(false);
   const [accountBalance, setAccountBalance] = useState(0);
   const [userName, setUserName] = useState('');
+  const [shareTab, setShareTab] = useState<'period' | 'trade'>('period');
+  const [selectedTrade, setSelectedTrade] = useState<any | null>(null);
   const cardRef = useRef<any>(null);
+  const tradeCardRef = useRef<any>(null);
 
   const shareCard = async () => {
-    if (!cardRef.current) return;
+    const isTradeTab = shareTab === 'trade';
+    const ref = isTradeTab ? tradeCardRef.current : cardRef.current;
+    if (!ref) return;
     setIsSharing(true);
     try {
-      const uri = await cardRef.current.capture();
+      const uri = await ref.capture();
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share PnL Card' });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: isTradeTab ? 'Share Trade Card' : 'Share PnL Card' });
       }
     } catch (e) { console.error('Share error:', e); }
     finally { setIsSharing(false); }
@@ -1575,35 +1733,129 @@ const HistoryScreen = React.memo(() => {
       {/* ── Share PnL Card Modal ─────────────────────────────────────────── */}
       <Modal visible={showShareModal} transparent animationType="slide" onRequestClose={() => setShowShareModal(false)}>
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
-          <View style={{ backgroundColor: isDark ? '#0f172a' : '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 }}>
-            <View style={{ width: 36, height: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#f8fafc' : '#0f172a' }}>Share PnL Card</Text>
+          <View style={{ backgroundColor: isDark ? '#0f172a' : '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 40 }}>
+            {/* Handle */}
+            <View style={{ width: 36, height: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 16 }} />
+
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#f8fafc' : '#0f172a' }}>Share Card</Text>
               <TouchableOpacity onPress={() => setShowShareModal(false)}><X size={20} color={isDark ? '#64748b' : '#94a3b8'} /></TouchableOpacity>
             </View>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Period</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-              {(['daily', 'weekly', 'monthly', 'yearly'] as PeriodKey[]).map(p => (
-                <TouchableOpacity key={p} onPress={() => { Haptics.selectionAsync(); setSharePeriod(p); }} style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: sharePeriod === p ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), borderWidth: 1, borderColor: sharePeriod === p ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0') }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: sharePeriod === p ? '#fff' : (isDark ? '#94a3b8' : '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5 }}>{p}</Text>
+
+            {/* Tab Toggle */}
+            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginHorizontal: 24, marginBottom: 20 }}>
+              {[{ key: 'period' as const, label: '📈 Period' }, { key: 'trade' as const, label: '🎯 Single Trade' }].map(tab => (
+                <TouchableOpacity key={tab.key} onPress={() => { Haptics.selectionAsync(); setShareTab(tab.key); setSelectedTrade(null); }}
+                  style={{ flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: shareTab === tab.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: shareTab === tab.key ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b' }}>{tab.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Content</Text>
-            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginBottom: 20 }}>
-              {([{ key: 'growth' as ModeKey, label: 'Growth Only' }, { key: 'detail' as ModeKey, label: 'Full Detail' }]).map(m => (
-                <TouchableOpacity key={m.key} onPress={() => { Haptics.selectionAsync(); setShareMode(m.key); }} style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: shareMode === m.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: shareMode === m.key ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b' }}>{m.label}</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 540 }}>
+              {shareTab === 'period' ? (
+                <View style={{ paddingHorizontal: 24 }}>
+                  {/* Period picker */}
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Period</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                    {(['daily', 'weekly', 'monthly', 'yearly'] as PeriodKey[]).map(p => (
+                      <TouchableOpacity key={p} onPress={() => { Haptics.selectionAsync(); setSharePeriod(p); }}
+                        style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', backgroundColor: sharePeriod === p ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), borderWidth: 1, borderColor: sharePeriod === p ? '#6366f1' : (isDark ? '#334155' : '#e2e8f0') }}>
+                        <Text style={{ fontSize: 10, fontWeight: '900', color: sharePeriod === p ? '#fff' : (isDark ? '#94a3b8' : '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5 }}>{p}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {/* Content mode */}
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 }}>Content</Text>
+                  <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginBottom: 20 }}>
+                    {([{ key: 'growth' as ModeKey, label: 'Growth Only' }, { key: 'detail' as ModeKey, label: 'Full Detail' }]).map(m => (
+                      <TouchableOpacity key={m.key} onPress={() => { Haptics.selectionAsync(); setShareMode(m.key); }}
+                        style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: shareMode === m.key ? (isDark ? '#334155' : '#ffffff') : 'transparent' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: shareMode === m.key ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b' }}>{m.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {/* PnL Card carousel */}
+                  <View style={{ marginHorizontal: -24, marginBottom: 24 }}>
+                    <PnLCardCarousel ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} activeTheme={shareTheme} onThemeChange={t => setShareTheme(t)} accountBalance={accountBalance} userName={userName} />
+                  </View>
+                </View>
+              ) : (
+                <View style={{ paddingHorizontal: 24 }}>
+                  {/* Trade picker */}
+                  {!selectedTrade ? (
+                    <>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12 }}>Select Trade (10 Recent)</Text>
+                      {[...trades]
+                        .sort((a, b) => (b.closeTime || b.openTime || '').localeCompare(a.closeTime || a.openTime || ''))
+                        .slice(0, 10)
+                        .map((t, i) => {
+                          const tp = t.profit || 0;
+                          const isP = tp >= 0;
+                          const isL = (t.type || '').toLowerCase() === 'buy';
+                          return (
+                            <TouchableOpacity key={t.ticket || i} onPress={() => { Haptics.impactAsync(); setSelectedTrade(t); }}
+                              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                              {/* Direction badge */}
+                              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isL ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                                {isL ? <TrendingUp size={16} color="#10b981" /> : <TrendingDown size={16} color="#ef4444" />}
+                              </View>
+                              {/* Symbol + type */}
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? '#f8fafc' : '#0f172a' }}>{t.symbol || '–'}</Text>
+                                <Text style={{ fontSize: 10, fontWeight: '600', color: '#64748b', marginTop: 1 }}>
+                                  {isL ? 'Long' : 'Short'} · {(t.volume || t.lots || 0).toFixed(2)} lots · {t.closeTime ? format(new Date(t.closeTime), 'MMM d') : ''}
+                                </Text>
+                              </View>
+                              {/* P&L */}
+                              <Text style={{ fontSize: 14, fontWeight: '900', color: isP ? '#10b981' : '#ef4444' }}>
+                                {isP ? '+' : ''}${tp.toFixed(2)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                    </>
+                  ) : (
+                    <>
+                      {/* Back button */}
+                      <TouchableOpacity onPress={() => setSelectedTrade(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+                        <ChevronLeft size={14} color="#6366f1" />
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#6366f1' }}>Change Trade</Text>
+                      </TouchableOpacity>
+                      {/* Selected trade badge */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 12, padding: 10, marginBottom: 16, gap: 10 }}>
+                        {(selectedTrade.type || '').toLowerCase() === 'buy'
+                          ? <TrendingUp size={14} color="#10b981" />
+                          : <TrendingDown size={14} color="#ef4444" />}
+                        <Text style={{ fontWeight: '800', color: isDark ? '#f8fafc' : '#0f172a', fontSize: 13 }}>{selectedTrade.symbol}</Text>
+                        <Text style={{ color: '#64748b', fontSize: 11, flex: 1 }}>
+                          {selectedTrade.closeTime ? format(new Date(selectedTrade.closeTime), 'MMM d, yyyy') : ''}
+                        </Text>
+                        <Text style={{ fontWeight: '900', fontSize: 13, color: (selectedTrade.profit || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {(selectedTrade.profit || 0) >= 0 ? '+' : ''}${(selectedTrade.profit || 0).toFixed(2)}
+                        </Text>
+                      </View>
+                      {/* Trade card carousel */}
+                      <View style={{ marginHorizontal: -24, marginBottom: 24 }}>
+                        <TradeCardCarousel ref={tradeCardRef} trade={selectedTrade} activeTheme={shareTheme} onThemeChange={t => setShareTheme(t)} userName={userName} />
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Share button (always visible outside scroll) */}
+            {(shareTab === 'period' || (shareTab === 'trade' && selectedTrade)) && (
+              <View style={{ paddingHorizontal: 24 }}>
+                <TouchableOpacity onPress={shareCard} disabled={isSharing}
+                  style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                  {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
+                  <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }}>{isSharing ? 'Preparing...' : 'Share Card'}</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            <View style={{ marginBottom: 24, marginHorizontal: -24 }}>
-              <PnLCardCarousel ref={cardRef} trades={trades} period={sharePeriod} mode={shareMode} activeTheme={shareTheme} onThemeChange={(t) => setShareTheme(t)} accountBalance={accountBalance} userName={userName} />
-            </View>
-            <TouchableOpacity onPress={shareCard} disabled={isSharing} style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-              {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }}>{isSharing ? 'Preparing...' : 'Share Card'}</Text>
-            </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
