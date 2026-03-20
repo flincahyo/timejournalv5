@@ -1,14 +1,15 @@
 import React, { useState, useRef, useTransition, useCallback, startTransition } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, Image, 
-  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput, Switch
+  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput, Switch,
+  Animated, Dimensions
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, BACKEND_URL } from '../Constants';
 import { 
   LogOut, ChevronRight, Bell, Moon, Sun, X, Lock, Link2, BarChart2, 
-  Upload, Music, Send
+  Upload, Music, Send, Camera
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
@@ -262,6 +263,45 @@ export default function SettingsModal({
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
+  // Animation States
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const [renderComponent, setRenderComponent] = useState(false);
+  const slideY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const fadeBg = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (visible) {
+      setRenderComponent(true);
+      Animated.parallel([
+        Animated.spring(slideY, {
+          toValue: 0,
+          damping: 24,
+          stiffness: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeBg, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(slideY, {
+          toValue: SCREEN_HEIGHT,
+          damping: 24,
+          stiffness: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeBg, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        })
+      ]).start(() => setRenderComponent(false));
+    }
+  }, [visible]);
+
   // Edit States
   const [editMode, setEditMode] = useState<'none' | 'profile' | 'password'>('none');
   const [editName, setEditName] = useState('');
@@ -395,10 +435,16 @@ export default function SettingsModal({
     </TouchableOpacity>
   );
 
+  if (!renderComponent) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
-        <View style={{ backgroundColor: bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 40, height: '90%' }}>
+    <View style={{ position: 'absolute', inset: 0, zIndex: 100 }}>
+      <Animated.View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', opacity: fadeBg }}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+      </Animated.View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end', pointerEvents: 'box-none' }}>
+        <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 40, height: '90%', transform: [{ translateY: slideY }] }}>
           
           {/* Header */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
@@ -427,7 +473,7 @@ export default function SettingsModal({
                   </View>
                 )}
                 <View style={{ position: 'absolute', bottom: -4, right: -4, backgroundColor: isDark ? '#1e293b' : '#ffffff', width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: bg }}>
-                  <Text style={{ fontSize: 14 }}>📷</Text>
+                  <Camera size={14} color={isDark ? '#cbd5e1' : '#64748b'} />
                 </View>
               </TouchableOpacity>
               <Text style={{ fontSize: 24, fontWeight: '900', color: textP, letterSpacing: -0.5, marginBottom: 4 }}>{displayName}</Text>
@@ -558,8 +604,8 @@ export default function SettingsModal({
           <AvatarPickerModal visible={avatarModalVisible} currentImage={avatarUrl} isDark={isDark} onClose={() => setAvatarModalVisible(false)} onAvatarUpdated={(url) => { setAvatarUrl(url); setAvatarModalVisible(false); onUserUpdated?.({ image: url }); }} />
           <NotificationSettingsModal visible={isNotifModalVisible} onClose={() => setNotifModalVisible(false)} isDark={isDark} enabled={notifEnabled} setEnabled={(val: boolean) => { setNotifEnabled(val); saveSettings('news', { enabled: val }); }} priceSound={defaultPriceSound} setPriceSound={(id: string) => { setDefaultPriceSound(id); saveSettings('audio', { price_sound: id }); }} momentumSound={defaultMomentumSound} setMomentumSound={(id: string) => { setDefaultMomentumSound(id); saveSettings('audio', { momentum_sound: id }); }} newsSound={defaultNewsSound} setNewsSound={(id: string) => { setDefaultNewsSound(id); saveSettings('news', { sound: id }); }} availableSounds={availableSounds} setAvailableSounds={setAvailableSounds} />
 
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
-    </Modal>
+    </View>
   );
 }

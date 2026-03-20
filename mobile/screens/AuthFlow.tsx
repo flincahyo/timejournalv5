@@ -12,7 +12,7 @@ export default function AuthFlow({ onLogin }: { onLogin: () => void }) {
       {currentScreen === 'login' ? (
         <LoginScreen onLoginSuccess={onLogin} onRegister={() => setCurrentScreen('signup')} />
       ) : (
-        <SignupScreen onBack={() => setCurrentScreen('login')} onRegister={onLogin} />
+        <SignupScreen onBack={() => setCurrentScreen('login')} onRegisterSuccess={onLogin} />
       )}
     </View>
   );
