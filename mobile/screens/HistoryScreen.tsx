@@ -25,14 +25,19 @@ import { HStack } from '../components/ui/hstack';
 
 // ── Daily group card (extracted for memoization) ────────────────────────────────
 const DailyGroupCard = React.memo(({
-  group, isDark, isExp, date, onToggleDay, journalData, saveNote, toggleDailyTag, onOpenRecap
+  group, isDark, isExp, date, onToggleDay, journalData, saveNote, toggleDailyTag, addTag, deleteTag, onOpenRecap
 }: {
   group: any; isDark: boolean; isExp: boolean; date: string;
   onToggleDay: (day: string) => void;
   journalData: any; saveNote: (day: string, text: string) => void;
   toggleDailyTag: (day: string, tag: string) => void;
+  addTag: (name: string) => void;
+  deleteTag: (name: string) => void;
   onOpenRecap: (trade: any) => void;
 }) => {
+  const [addingTag, setAddingTag] = useState(false);
+  const [newTagText, setNewTagText] = useState('');
+  const [deletingTag, setDeletingTag] = useState<string | null>(null);
   // Call parent stable callback
   const handleToggle = useCallback(() => onToggleDay(date), [date, onToggleDay]);
   const displayDate = new Date(group.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -101,24 +106,74 @@ const DailyGroupCard = React.memo(({
             <HStack space="xs" className="items-center mb-3">
               <Hash size={12} color="#f59e0b" />
               <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Psychology Tags</Text>
+              {deletingTag && (
+                <TouchableOpacity onPress={() => setDeletingTag(null)} style={{ marginLeft: 6 }}>
+                  <Text style={{ fontSize: 9, color: '#64748b', fontWeight: '700' }}>Done</Text>
+                </TouchableOpacity>
+              )}
             </HStack>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
               {journalData.tags.map((tag: string, tidx: number) => {
                 const isActive = (journalData.dailyTags[group.date] || []).includes(tag);
+                const isDeleting = deletingTag === tag;
                 return (
                   <TouchableOpacity
                     key={tidx}
-                    onPress={() => toggleDailyTag(group.date, tag)}
+                    onPress={() => {
+                      if (deletingTag) { setDeletingTag(null); return; }
+                      toggleDailyTag(group.date, tag);
+                    }}
+                    onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setDeletingTag(tag); }}
                     style={{
-                      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
-                      backgroundColor: isActive ? '#3b82f6' : (isDark ? '#1e293b' : '#f1f5f9'),
-                      borderWidth: 1, borderColor: isActive ? '#3b82f6' : (isDark ? '#334155' : '#e2e8f0')
+                      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4,
+                      backgroundColor: isDeleting ? '#fee2e2' : (isActive ? '#3b82f6' : (isDark ? '#1e293b' : '#f1f5f9')),
+                      borderWidth: 1, borderColor: isDeleting ? '#fca5a5' : (isActive ? '#3b82f6' : (isDark ? '#334155' : '#e2e8f0'))
                     }}
                   >
-                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: isActive ? '#ffffff' : (isDark ? '#cbd5e1' : '#1e293b') }}>{tag}</Text>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: isDeleting ? '#ef4444' : (isActive ? '#ffffff' : (isDark ? '#cbd5e1' : '#1e293b')) }}>{tag}</Text>
+                    {isDeleting && (
+                      <TouchableOpacity onPress={() => { deleteTag(tag); setDeletingTag(null); }} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+                        <X size={10} color="#ef4444" />
+                      </TouchableOpacity>
+                    )}
                   </TouchableOpacity>
                 );
               })}
+
+              {/* Add Tag Button / Input */}
+              {addingTag ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <TextInput
+                    autoFocus
+                    value={newTagText}
+                    onChangeText={setNewTagText}
+                    placeholder="Tag name"
+                    placeholderTextColor="#94a3b8"
+                    style={{
+                      fontSize: 10, fontWeight: 'bold', color: isDark ? '#f8fafc' : '#0f172a',
+                      backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                      borderWidth: 1, borderColor: '#6366f1', borderRadius: 10,
+                      paddingHorizontal: 10, paddingVertical: 6, minWidth: 80
+                    }}
+                    onSubmitEditing={() => {
+                      if (newTagText.trim()) { addTag(newTagText.trim()); }
+                      setNewTagText(''); setAddingTag(false);
+                    }}
+                    onBlur={() => { setNewTagText(''); setAddingTag(false); }}
+                  />
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => setAddingTag(true)}
+                  style={{
+                    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4,
+                    borderWidth: 1, borderStyle: 'dashed', borderColor: isDark ? '#334155' : '#cbd5e1'
+                  }}
+                >
+                  <Plus size={10} color="#6366f1" />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#6366f1' }}>Add tag</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </Box>
 
@@ -580,6 +635,41 @@ const HistoryScreen = React.memo(() => {
     } catch (e) { console.error('Toggle tag error:', e); }
   }, []);
 
+  const addTag = useCallback(async (name: string) => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      await fetch(`${API_URL}/journal/tag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name })
+      });
+      setJournalData((prev: any) => {
+        if (prev.tags.includes(name)) return prev;
+        return { ...prev, tags: [...prev.tags, name] };
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) { console.error('Add tag error:', e); }
+  }, []);
+
+  const deleteTag = useCallback(async (name: string) => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      await fetch(`${API_URL}/journal/tag`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name })
+      });
+      setJournalData((prev: any) => ({
+        ...prev,
+        tags: prev.tags.filter((t: string) => t !== name),
+        dailyTags: Object.fromEntries(
+          Object.entries(prev.dailyTags).map(([day, tags]) => [day, (tags as string[]).filter(t => t !== name)])
+        )
+      }));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) { console.error('Delete tag error:', e); }
+  }, []);
+
   const setF = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
   const setRecapF = (k: string, v: any) => setRecapForm((p: any) => ({ ...p, [k]: v }));
   const lastSwapY = React.useRef(0);
@@ -885,6 +975,8 @@ const HistoryScreen = React.memo(() => {
                 journalData={journalData}
                 saveNote={saveNote}
                 toggleDailyTag={toggleDailyTag}
+                addTag={addTag}
+                deleteTag={deleteTag}
                 onOpenRecap={handleOpenRecap}
               />
             ))}
