@@ -130,21 +130,49 @@ function NotificationSettingsModal({
     } catch (e) { console.error(e); } finally { setUploading(false); }
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
-        <View style={{ height: '75%', backgroundColor: isDark ? '#020617' : '#ffffff', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 24 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-            <View>
-                <Text style={{ fontSize: 18, fontWeight: '900', color: textP }}>Notification & Audio</Text>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', color: textM, textTransform: 'uppercase' }}>Central Signal Management</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={20} color={textM} />
-            </TouchableOpacity>
-          </View>
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const slideN = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+  React.useEffect(() => {
+    Animated.spring(slideN, {
+      toValue: visible ? 0 : SCREEN_HEIGHT,
+      damping: 24, stiffness: 220, useNativeDriver: true,
+    }).start();
+  }, [visible]);
+
+  return (
+    <Animated.View 
+      style={{ position: 'absolute', inset: 0, zIndex: 110, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideN }] }}
+      pointerEvents={visible ? 'auto' : 'none'}
+    >
+      <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+        {/* Header */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+          backgroundColor: card, borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+        }}>
+          <TouchableOpacity
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} activeOpacity={0.75}
+            style={{
+              width: 38, height: 38, borderRadius: 13,
+              backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+              alignItems: 'center', justifyContent: 'center', marginRight: 14,
+            }}
+          >
+            <ArrowLeft size={20} color={textM} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: textP, letterSpacing: -0.5 }}>
+              Notification & Audio
+            </Text>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.8 }}>
+              CENTRAL SIGNAL MANAGEMENT
+            </Text>
+          </View>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24 }}>
             {/* Global Switch */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: card, padding: 20, borderRadius: 24, marginBottom: 32, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' }}>
                <View>
@@ -236,10 +264,9 @@ function NotificationSettingsModal({
                  <Text style={{ color: textM, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Test Local Notification</Text>
                </TouchableOpacity>
             </View>
-          </ScrollView>
-        </View>
+           </ScrollView>
       </View>
-    </Modal>
+    </Animated.View>
   );
 }
 
@@ -266,6 +293,7 @@ export default function SettingsModal({
   // Animation States
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const slideY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const slideYMT5 = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeBg = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -283,6 +311,15 @@ export default function SettingsModal({
       })
     ]).start();
   }, [visible]);
+
+  React.useEffect(() => {
+    Animated.spring(slideYMT5, {
+      toValue: mt5ModalVisible ? 0 : SCREEN_HEIGHT,
+      damping: 24,
+      stiffness: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [mt5ModalVisible]);
 
   // Edit States
   const [editMode, setEditMode] = useState<'none' | 'profile' | 'password'>('none');
@@ -432,7 +469,7 @@ export default function SettingsModal({
             backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: border,
           }}>
             <TouchableOpacity
-              onPress={onClose} activeOpacity={0.75}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} activeOpacity={0.75}
               style={{
                 width: 38, height: 38, borderRadius: 13,
                 backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
@@ -585,17 +622,38 @@ export default function SettingsModal({
           </Modal>
 
           {/* MT5 Settings Modal */}
-          <Modal visible={mt5ModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setMt5ModalVisible(false)}>
-            <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#ffffff' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, paddingTop: 52, borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5' }}>
-                <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#f1f5f9' : '#0f172a', letterSpacing: -0.5 }}>MT5 Connection</Text>
-                <TouchableOpacity onPress={() => setMt5ModalVisible(false)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
-                  <X size={16} color={isDark ? '#94a3b8' : '#64748b'} strokeWidth={2} />
+          <Animated.View 
+            style={{ position: 'absolute', inset: 0, zIndex: 110, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYMT5 }] }}
+            pointerEvents={mt5ModalVisible ? 'auto' : 'none'}
+          >
+            <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+                backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: border,
+              }}>
+                <TouchableOpacity
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMt5ModalVisible(false); }} activeOpacity={0.75}
+                  style={{
+                    width: 38, height: 38, borderRadius: 13,
+                    backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+                  }}
+                >
+                  <ArrowLeft size={20} color={textM} />
                 </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 20, fontWeight: '900', color: textP, letterSpacing: -0.5 }}>
+                    MT5 Connection
+                  </Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.8 }}>
+                    BROKER MANAGEMENT
+                  </Text>
+                </View>
               </View>
               <MT5SettingsScreen />
             </View>
-          </Modal>
+          </Animated.View>
 
           {/* Avatar Picker Modal */}
           <AvatarPickerModal visible={avatarModalVisible} currentImage={avatarUrl} isDark={isDark} onClose={() => setAvatarModalVisible(false)} onAvatarUpdated={(url) => { setAvatarUrl(url); setAvatarModalVisible(false); onUserUpdated?.({ image: url }); }} />
