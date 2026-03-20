@@ -435,10 +435,11 @@ export default function SettingsModal({
     </TouchableOpacity>
   );
 
-  if (!renderComponent) return null;
-
   return (
-    <Animated.View style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: bg, transform: [{ translateY: slideY }] }}>
+    <Animated.View 
+      style={{ position: 'absolute', inset: 0, zIndex: 100, backgroundColor: bg, transform: [{ translateY: slideY }] }}
+      pointerEvents={renderComponent ? 'auto' : 'none'}
+    >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1, backgroundColor: bg }}>
           
