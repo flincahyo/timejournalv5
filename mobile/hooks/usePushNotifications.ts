@@ -87,8 +87,9 @@ export const usePushNotifications = () => {
         notificationListener.current = Notifications.addNotificationReceivedListener(note => {
           setNotification(note);
           
-          // Play foreground sound if provided in data
-          const soundUrl = note.request.content.data?.sound;
+          // Play foreground sound — check soundUrl (new) then sound (fallback)
+          const data = note.request.content.data || {};
+          const soundUrl = data.soundUrl || data.sound;
           if (soundUrl && typeof soundUrl === 'string' && soundUrl.startsWith('http')) {
             import('expo-audio').then(({ createAudioPlayer }) => {
               const player = createAudioPlayer(soundUrl);

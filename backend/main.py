@@ -1515,6 +1515,7 @@ class TestPushRequest(BaseModel):
 async def test_push(req: TestPushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Called by web UI 'Test' button — sends a test push notification to the user's mobile device."""
     s = await db.get(UserSettings, user.id)
+    print(f"DEBUG test-push: user={user.id}, has_settings={s is not None}, push_token={s.expo_push_token[:30] if s and s.expo_push_token else None}")
     if not s or not s.expo_push_token:
         return {"ok": False, "reason": "No push token registered"}
     
@@ -1525,6 +1526,7 @@ async def test_push(req: TestPushRequest, user: User = Depends(get_current_user)
     if req.alertId:
         result = await db.execute(select(Alert).where(Alert.id == req.alertId, Alert.user_id == user.id))
         alert = result.scalar_one_or_none()
+        print(f"DEBUG test-push: alertId={req.alertId}, found_in_db={alert is not None}")
         if alert:
             a = alert.data
             if a.get("type") == "candle":
@@ -1539,6 +1541,7 @@ async def test_push(req: TestPushRequest, user: User = Depends(get_current_user)
     else:
         sound = "default"
     
+    print(f"DEBUG test-push: sending — title={title}, sound={sound}")
     await send_expo_push_notification(s.expo_push_token, title, body, {"type": "test"}, sound=sound)
     return {"ok": True}
 
@@ -1552,6 +1555,7 @@ class FirePushRequest(BaseModel):
 async def fire_push(req: FirePushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Called by web AlertWatcher when an alert actually fires — sends push notification to mobile."""
     s = await db.get(UserSettings, user.id)
+    print(f"DEBUG fire-push: user={user.id}, has_token={bool(s and s.expo_push_token)}")
     if not s or not s.expo_push_token:
         return {"ok": False, "reason": "No push token"}
     
@@ -1562,10 +1566,13 @@ async def fire_push(req: FirePushRequest, user: User = Depends(get_current_user)
     if alert:
         a = alert.data
         sound = a.get("soundUri") or a.get("sound", "default")
+        print(f"DEBUG fire-push: alertId={req.alertId}, found_alert=True, sound={sound}")
+    else:
+        print(f"DEBUG fire-push: alertId={req.alertId}, found_alert=False (no DB entry)")
     
     await send_expo_push_notification(
         s.expo_push_token, req.title, req.body,
-        {"alertId": req.alertId, "type": "alert"},
+        {"alertId": req.alertId, "type": "alert", "soundUrl": sound},
         sound=sound
     )
     return {"ok": True}
@@ -1851,10 +1858,11 @@ async def _alert_evaluator_loop():
                                 _alert_notified[alert_id] = now
                                 
                                 if push_token:
+                                    alert_sound = alert.get("soundUri") or alert.get("sound", "default")
                                     await send_expo_push_notification(
                                         push_token, title, body,
-                                        {"alertId": alert_id, "symbol": symbol},
-                                        sound=alert.get("soundUri") or alert.get("sound", "default")
+                                        {"alertId": alert_id, "symbol": symbol, "soundUrl": alert_sound},
+                                        sound=alert_sound
                                     )
                                 
                                 # Disable "Once" alerts
