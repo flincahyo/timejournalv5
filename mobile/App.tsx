@@ -23,6 +23,7 @@ import './global.css';
 import HomeScreen from './screens/HomeScreen';
 import TrackerScreen from './screens/TrackerScreen';
 import PortfolioScreen from './screens/PortfolioScreen';
+import SettingsModal from './screens/SettingsModal';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
@@ -134,6 +135,9 @@ function MainApp() {
   const [portfolioInitialTab, setPortfolioInitialTab] = useState(0);
   // Shared user state — single source of truth for both Home + Settings
   const [sharedUser, setSharedUser] = useState<any>(null);
+
+  // Settings Modal
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Notification Center
   const [showNotifications, setShowNotifications] = useState(false);
@@ -276,10 +280,10 @@ function MainApp() {
     }
   }, [activeTab]);
 
-  // Navigate to Settings (Portfolio tab, Settings sub-tab)
+  // Navigate to Settings (shows Settings Modal)
   const openSettings = useCallback(() => {
-    navigateTo(2, 3);
-  }, [navigateTo]);
+    setShowSettingsModal(true);
+  }, []);
 
   // Stable callbacks for tab screen props — avoids invalidating React.memo on every render
   const handleTrackerNavigate = useCallback((id: string) => {
@@ -418,6 +422,14 @@ function MainApp() {
           />
         </Animated.View>
       )}
+      
+      {/* ── Settings Modal Overlay ───────────────────────────────────────── */}
+      <SettingsModal 
+        visible={showSettingsModal} 
+        onClose={() => setShowSettingsModal(false)}
+        onLogout={handleLogout}
+        onUserUpdated={handleUserUpdated}
+      />
       </View>
     </View>
   );
