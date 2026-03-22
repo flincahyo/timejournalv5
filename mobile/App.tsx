@@ -141,7 +141,7 @@ function MainApp() {
   // Settings Modal & AI Chat
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [aiChatData, setAIChatData] = useState<{ trades: any[]; stats: any }>({ trades: [], stats: undefined });
+  const [aiChatData, setAIChatData] = useState<{ trades: any[]; stats: any; guardStatus?: 'normal' | 'loss_limit' | 'profit_goal'; dailyPnL?: number; guardSettings?: any }>({ trades: [], stats: undefined, guardStatus: 'normal', dailyPnL: 0 });
 
   // Notification Center
   const [showNotifications, setShowNotifications] = useState(false);
@@ -385,7 +385,7 @@ function MainApp() {
             <HomeScreen
               onNavigate={handleHomeNavigate}
               onOpenSettings={openSettings}
-              onOpenAIChat={(trades: any[], stats: any) => { setAIChatData({ trades, stats }); setShowAIChat(true); }}
+              onOpenAIChat={(trades: any[], stats: any, guardStatus?: any, dailyPnL?: number, guardSettings?: any) => { setAIChatData({ trades, stats, guardStatus, dailyPnL, guardSettings }); setShowAIChat(true); }}
               user={sharedUser}
               unreadNotifications={unreadCount}
             />
@@ -435,6 +435,9 @@ function MainApp() {
         onClose={() => setShowAIChat(false)}
         trades={aiChatData.trades}
         stats={aiChatData.stats}
+        guardStatus={aiChatData.guardStatus}
+        dailyPnL={aiChatData.dailyPnL}
+        guardSettings={aiChatData.guardSettings}
       />
       </View>
     </View>

@@ -423,7 +423,7 @@ const BackgroundEquityChart = React.memo(({ trades, isDark }: { trades: any[], i
 const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user: userProp, unreadNotifications = 0 }: {
   onNavigate: (s: string) => void,
   onOpenSettings: () => void,
-  onOpenAIChat: (trades: any[], stats: any) => void,
+  onOpenAIChat: (trades: any[], stats: any, guardStatus?: string, dailyPnL?: number, guardSettings?: any) => void,
   user?: any,
   unreadNotifications?: number,
 }) => {
@@ -433,7 +433,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
   const mode = isDark ? 'dark' : 'light';
 
   const { isConnected, account: accountInfo, trades, loading, refresh } = useMT5Sync();
-  const { status: guardStatus, visualsEnabled } = useTradingGuard(trades);
+  const { status: guardStatus, dailyPnL, settings: guardSettings, visualsEnabled } = useTradingGuard(trades);
   const [refreshing, setRefreshing] = useState(false);
   const [hideBalance, setHideBalance] = useState(false);
   const [localUser, setLocalUser] = useState<any>(null);
@@ -788,7 +788,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
       {/* AI Chat Floating Action Button */}
 
       <AIChatFAB 
-        onPress={() => onOpenAIChat(trades, stats)} 
+        onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)} 
         showProactiveBubble={true} 
         proactiveMessage={
             stats.todayTrades === 0 

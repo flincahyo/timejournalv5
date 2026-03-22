@@ -1627,7 +1627,8 @@ class AIChatMessage(BaseModel):
 
 class AIChatRequest(BaseModel):
     messages: List[AIChatMessage]
-    context_type: str = "general"  # "general" | "analyst" | "risk" | "psychology"
+    context_type: str = "general"
+    guard_context: Optional[dict] = None  # Trading Guard: {enabled, lossLimit, profitGoal, dailyPnL, status}
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1784,7 +1785,16 @@ KEMAMPUAN KAMU:
 ATURAN KETAT:
 1. JANGAN buat data fiktif. Kalau data tidak ada, bilang jujur.
 2. Kalau user tanya trade tanggal spesifik, cari di catatan harian di atas.
-3. Data user ini RAHASIA - jangan expose ke siapapun selain user ini."""
+3. Data user ini RAHASIA - jangan expose ke siapapun selain user ini.
+{f'''
+STATUS TRADING GUARD HARI INI:
+- Fitur: {"AKTIF" if req.guard_context.get("enabled") else "NONAKTIF"}
+- Daily PnL: ${req.guard_context.get("dailyPnL", 0):.2f}
+- Max Loss Limit: ${req.guard_context.get("lossLimit", 0):.2f}
+- Profit Goal: ${req.guard_context.get("profitGoal", 0):.2f}
+- Status: {req.guard_context.get("status", "normal").upper()}
+{("⚠️ USER SUDAH MENCAPAI MAX DAILY LOSS. Berikan respons yang supportif, ingatkan untuk berhenti trading hari ini, dan evaluasi psikologi." if req.guard_context.get("status") == "loss_limit" else "")}
+{("✅ USER SUDAH MENCAPAI DAILY PROFIT GOAL. Berikan apresiasi, sarankan untuk mengamankan profit dan istirahat." if req.guard_context.get("status") == "profit_goal" else "")}''' if req.guard_context and req.guard_context.get("enabled") else ""}"""
 
     grok_messages = [{"role": "system", "content": system_prompt}]
     for msg in req.messages:
