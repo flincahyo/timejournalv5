@@ -5,7 +5,7 @@ import {
   ActivityIndicator, Dimensions, Keyboard
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { X, Send, Sparkles, Brain, BarChart2, RefreshCw, Zap } from 'lucide-react-native';
+import { X, Send, Sparkles, Brain, BarChart2, TrendingUp, Shield, BookOpen, Calendar } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -35,9 +35,11 @@ interface AIChatScreenProps {
 }
 
 const QUICK_ACTIONS = [
-  { id: 'analyst', label: '📊 Analisa Performa', icon: BarChart2, prompt: '__AI_ANALYST__' },
-  { id: 'risk', label: '⚖️ Risk Management', icon: Zap, prompt: 'Berikan saran risk management untuk trading saya berdasarkan data performa saat ini.' },
-  { id: 'psychology', label: '🧠 Psikologi Trading', icon: Brain, prompt: 'Bagaimana kondisi psikologi trading saya? Apakah ada pola yang perlu diperbaiki?' },
+  { id: 'analyst', label: 'Analisa Performa', icon: BarChart2, prompt: '__AI_ANALYST__' },
+  { id: 'equity', label: 'Proyeksi Ekuitas', icon: TrendingUp, prompt: '__EQUITY_PROJECTION__' },
+  { id: 'risk', label: 'Risk Management', icon: Shield, prompt: 'Berikan evaluasi dan saran risk management untuk trading saya berdasarkan data performa saat ini. Sertakan konkret angka dari data trade saya.' },
+  { id: 'psychology', label: 'Psikologi Trading', icon: Brain, prompt: 'Analisa kondisi psikologi trading saya berdasarkan pola trade yang ada. Apakah ada pola emosi atau perilaku yang perlu diperbaiki?' },
+  { id: 'journal', label: 'Minta Evaluasi Hari Ini', icon: BookOpen, prompt: 'Evaluasi performa trading saya hari ini. Apa yang berjalan baik dan apa yang perlu diperbaiki?' },
 ];
 
 export const AIChatScreen: React.FC<AIChatScreenProps> = ({ visible, onClose, trades = [], stats }) => {
@@ -154,6 +156,33 @@ export const AIChatScreen: React.FC<AIChatScreenProps> = ({ visible, onClose, tr
     setShowQuickActions(false);
 
     if (content === '__AI_ANALYST__') { runAIAnalyst(); return; }
+
+    if (content === '__EQUITY_PROJECTION__') {
+      setShowQuickActions(false);
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: 'Buat proyeksi ekuitas trading saya', timestamp: new Date() };
+      const loadingMsg: Message = { id: (Date.now() + 1).toString(), role: 'analyst', content: '', timestamp: new Date(), isLoading: true };
+      setMessages(prev => [...prev, userMsg, loadingMsg]);
+      setIsTyping(true);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const res = await fetch(`${API_URL}/ai/equity-projection`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ months: 6 })
+        });
+        const data = await res.json();
+        const projection = data.success ? data.projection : (data.message || '⚠️ Tidak dapat membuat proyeksi.');
+        setMessages(prev => prev.map(m => m.isLoading ? { ...m, content: projection, isLoading: false } : m));
+      } catch {
+        setMessages(prev => prev.map(m => m.isLoading ? { ...m, content: '⚠️ Koneksi gagal.', isLoading: false } : m));
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+      return;
+    }
+
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);

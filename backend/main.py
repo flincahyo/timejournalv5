@@ -1634,82 +1634,143 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
     if not XAI_AVAILABLE:
         raise HTTPException(status_code=500, detail="xAI (Grok) tidak tersedia. Periksa API key.")
 
-    # --- Fetch user trade context from DB ---
+    # --- Fetch ALL user trades from DB (no limit) ---
     res_acc = await db.execute(
         select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
     )
     active_acc = res_acc.scalar_one_or_none()
 
-    trade_context = ""
     account_context = ""
     stats_context = ""
 
     if active_acc:
-        # Account info
         acc_info = active_acc.account_info or {}
         balance = acc_info.get("balance", 0)
         equity = acc_info.get("equity", 0)
-        account_context = f"Balance: ${balance:.2f}, Equity: ${equity:.2f}"
+        deposit = acc_info.get("deposit", 0)
+        account_context = f"Balance: ${balance:.2f}, Equity: ${equity:.2f}, Deposit: ${deposit:.2f}"
 
-        # Recent trades (last 30)
+        # Fetch ALL trades - no limit
         res_trades = await db.execute(
-            select(Trade).where(Trade.user_id == user.id).order_by(Trade.synced_at.desc()).limit(50)
+            select(Trade).where(Trade.user_id == user.id).order_by(Trade.synced_at.desc())
         )
-        trades = res_trades.scalars().all()
+        all_trades = res_trades.scalars().all()
 
-        if trades:
-            trade_list = [t.data for t in trades if t.data]
+        if all_trades:
+            trade_list = [t.data for t in all_trades if t.data]
             total = len(trade_list)
             wins = sum(1 for t in trade_list if (t.get("profit", 0) or 0) > 0)
             losses = total - wins
             total_pnl = sum((t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0) for t in trade_list)
             win_rate = (wins / total * 100) if total > 0 else 0
 
-            # Symbol breakdown
+            # Symbol breakdown (all symbols)
             symbols: dict = {}
             for t in trade_list:
                 sym = t.get("symbol", "N/A")
                 pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
                 if sym not in symbols:
-                    symbols[sym] = {"count": 0, "pnl": 0.0}
+                    symbols[sym] = {"count": 0, "pnl": 0.0, "wins": 0}
                 symbols[sym]["count"] += 1
                 symbols[sym]["pnl"] += pnl
+                if pnl > 0:
+                    symbols[sym]["wins"] += 1
+            sym_summary = ", ".join([
+                f"{s}: {v['count']} trades, WR={int(v['wins']/v['count']*100)}%, PnL=${v['pnl']:.2f}"
+                for s, v in sorted(symbols.items(), key=lambda x: -x[1]["count"])
+            ])
 
-            sym_summary = ", ".join([f"{s}: {v['count']} trades (${v['pnl']:.2f})" for s, v in list(symbols.items())[:5]])
+            # Daily performance index (for date-specific queries)
+            daily: dict = {}
+            for t in trade_list:
+                ts = t.get("closeTime") or t.get("openTime") or t.get("time") or ""
+                if ts:
+                    try:
+                        dt_str = ts.replace(" ", "T")
+                        day = dt_str[:10]  # YYYY-MM-DD
+                        hour = dt_str[11:16] if len(dt_str) > 10 else ""
+                        pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
+                        if day not in daily:
+                            daily[day] = {"trades": [], "pnl": 0.0}
+                        daily[day]["pnl"] += pnl
+                        daily[day]["trades"].append(
+                            f"{hour} {t.get('symbol','?')} {t.get('type','?')} {t.get('lots', t.get('volume',0))} lots | PnL:${pnl:.2f} | Setup:{t.get('setup','N/A')} | Session:{t.get('session','N/A')}"
+                        )
+                    except: pass
 
-            # Recent 10 trades detail
-            recent_detail = []
-            for t in trade_list[:10]:
+            # Format daily data — last 30 days with detail, summary for older
+            sorted_days = sorted(daily.keys(), reverse=True)
+            recent_days = sorted_days[:30]
+            older_days = sorted_days[30:]
+
+            daily_detail_lines = []
+            for day in recent_days:
+                d = daily[day]
+                daily_detail_lines.append(f"\n[{day}] Total PnL: ${d['pnl']:.2f} ({len(d['trades'])} trades)")
+                for tl in d["trades"]:
+                    daily_detail_lines.append(f"  · {tl}")
+
+            older_summary = ""
+            if older_days:
+                older_pnl = sum(daily[d]["pnl"] for d in older_days)
+                older_count = sum(len(daily[d]["trades"]) for d in older_days)
+                older_summary = f"\n\n[Periode lebih lama: {older_days[-1]} s/d {older_days[0]}] Total: {older_count} trades, PnL: ${older_pnl:.2f}"
+
+            # Session breakdown
+            sessions: dict = {}
+            for t in trade_list:
+                sess = t.get("session", "Unknown")
                 pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
-                recent_detail.append(
-                    f"  - {t.get('symbol','?')} {t.get('type','?')} {t.get('lots', t.get('volume', 0))} lots | PnL: ${pnl:.2f} | Setup: {t.get('setup','N/A')} | Emosi: {t.get('emotion','N/A')} | Session: {t.get('session','N/A')}"
-                )
+                if sess not in sessions:
+                    sessions[sess] = {"count": 0, "pnl": 0.0}
+                sessions[sess]["count"] += 1
+                sessions[sess]["pnl"] += pnl
+            session_summary = ", ".join([f"{s}: {v['count']} trades (${v['pnl']:.2f})" for s, v in sessions.items()])
+
+            # Profit factor
+            total_win_p = sum((t.get("profit", 0) or 0) for t in trade_list if (t.get("profit", 0) or 0) > 0)
+            total_loss_p = abs(sum((t.get("profit", 0) or 0) for t in trade_list if (t.get("profit", 0) or 0) < 0))
+            profit_factor = total_win_p / total_loss_p if total_loss_p > 0 else total_win_p
+
+            # Average win/loss
+            win_trades = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) > 0]
+            loss_trades = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) < 0]
+            avg_win = sum(win_trades) / len(win_trades) if win_trades else 0
+            avg_loss = sum(loss_trades) / len(loss_trades) if loss_trades else 0
 
             stats_context = f"""
-Total Trades: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%
-Total PnL: ${total_pnl:.2f}
-Symbols Aktif: {sym_summary}
-10 Trade Terakhir:
-{chr(10).join(recent_detail)}"""
+=== RINGKASAN STATISTIK (SEMUA DATA: {total} TRADES) ===
+Win Rate: {win_rate:.1f}% | Wins: {wins} | Losses: {losses}
+Total PnL: ${total_pnl:.2f} | Avg Win: ${avg_win:.2f} | Avg Loss: ${avg_loss:.2f}
+Profit Factor: {profit_factor:.2f}
+Symbols: {sym_summary}
+Sessions: {session_summary}
+
+=== CATATAN HARIAN (30 HARI TERAKHIR) ===
+{''.join(daily_detail_lines)}{older_summary}"""
 
     # --- System Prompt ---
-    system_prompt = f"""Kamu adalah AI Trading Coach profesional bernama "Grok Coach" untuk aplikasi trading journal TimeJournal.
-Gaya bahasa: santai tapi profesional. Gunakan Bahasa Indonesia. Istilah teknikal boleh pakai Bahasa Inggris.
-JANGAN gunakan markdown berlebihan. Jawab ringkas dan langsung ke poin jika tidak diminta detail.
+    system_prompt = f"""Kamu adalah AI Trading Coach profesional untuk aplikasi TimeJournal.
+Nama kamu: "Grok Coach". Gunakan Bahasa Indonesia yang santai tapi profesional.
+Istilah teknikal boleh tetap Bahasa Inggris. Jawab RINGKAS & tepat sasaran kecuali diminta detail.
 
-DATA REAL-TIME USER (HANYA UNTUK REFERENSI, JANGAN EXPOSE KE USER):
-Nama User: {user.name}
-{f"Account Info: {account_context}" if account_context else "Account: Belum tersambung MT5"}
-{stats_context if stats_context else ""}
+DATA AKUN USER — {user.name}:
+{f"Account: {account_context}" if account_context else "Account: Belum tersambung MT5"}
+{stats_context if stats_context else "Catatan: Belum ada data trade."}
 
-ATURAN:
-1. Hanya akses data milik user ini. Jangan buat data fiktif.
-2. Jika user tanya data yang tidak ada, katakan dengan jujur.
-3. Untuk analisis mendalam, gunakan data trade yang tersedia di atas.
-4. Kamu bisa menjawab pertanyaan umum tentang trading, psikologi, dan strategi.
-5. Jangan roleplay menjadi karakter lain selain Trading Coach."""
+KEMAMPUAN KAMU:
+- Jawab pertanyaan tentang trade di TANGGAL dan JAM SPESIFIK menggunakan data harian di atas
+- Hitung statistik spesifik (win rate per simbol, per sesi, per periode)
+- Berikan proyeksi ekuitas berdasarkan statistik saat ini
+- Evaluasi psikologi & pola trading
+- Jelaskan konsep trading (strategi, risk management, dll)
+- Bandingkan performa antar periode
 
-    # --- Build messages for xAI ---
+ATURAN KETAT:
+1. JANGAN buat data fiktif. Kalau data tidak ada, bilang jujur.
+2. Kalau user tanya trade tanggal spesifik, cari di catatan harian di atas.
+3. Data user ini RAHASIA - jangan expose ke siapapun selain user ini."""
+
     grok_messages = [{"role": "system", "content": system_prompt}]
     for msg in req.messages:
         grok_messages.append({"role": msg.role, "content": msg.content})
@@ -1719,12 +1780,146 @@ ATURAN:
             model="grok-3-fast",
             messages=grok_messages,
             temperature=0.7,
-            max_tokens=1200
+            max_tokens=1500
         )
         reply = response.choices[0].message.content
         return {"success": True, "reply": reply}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class AutoTagRequest(BaseModel):
+    ticket: str
+    symbol: str
+    trade_type: str  # "BUY" or "SELL"
+    pnl: float
+    lots: float
+    open_time: str
+    close_time: str
+    session: str = ""
+    setup: str = ""
+    emotion: str = ""
+    notes: str = ""
+
+@app.post("/api/ai/auto-tag")
+async def ai_auto_tag(req: AutoTagRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Auto-tag a trade with AI-suggested setup, emotion classification, and notes."""
+    if not XAI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="xAI tidak tersedia.")
+
+    prompt = f"""Analisa trade ini dan berikan klasifikasi singkat:
+Trade: {req.trade_type} {req.symbol} {req.lots} lots
+PnL: ${req.pnl:.2f} | Session: {req.session}
+Open: {req.open_time} | Close: {req.close_time}
+Setup saat ini: {req.setup or 'N/A'} | Emosi: {req.emotion or 'N/A'}
+
+Respond dengan JSON (HANYA JSON, tanpa teks lain):
+{{
+  "suggested_setup": "nama setup teknikal yang paling mungkin (max 3 kata)",
+  "suggested_emotion": "satu emosi yang paling mungkin: Confident/Anxious/Neutral/Revengeful/Greedy/Fearful",
+  "quality": "A+/A/B/C berdasarkan R:R dan konsistensi",
+  "note": "1 kalimat evaluasi singkat"
+}}"""
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="grok-3-fast",
+            messages=[
+                {"role": "system", "content": "You are a trading classifier. Respond ONLY with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=200
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        import json as json_lib
+        result = json_lib.loads(raw)
+        return {"success": True, "suggestion": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class EquityProjectionRequest(BaseModel):
+    months: int = 6
+
+@app.post("/api/ai/equity-projection")
+async def equity_projection(req: EquityProjectionRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Calculate equity projection based on current trading statistics."""
+    if not XAI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="xAI tidak tersedia.")
+
+    res_acc = await db.execute(
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
+    )
+    active_acc = res_acc.scalar_one_or_none()
+
+    if not active_acc:
+        return {"success": False, "message": "Akun MT5 belum tersambung."}
+
+    acc_info = active_acc.account_info or {}
+    balance = acc_info.get("balance", 0)
+
+    res_trades = await db.execute(
+        select(Trade).where(Trade.user_id == user.id).order_by(Trade.synced_at.desc())
+    )
+    all_trades = res_trades.scalars().all()
+    trade_list = [t.data for t in all_trades if t.data]
+
+    if not trade_list or balance == 0:
+        return {"success": False, "message": "Data tidak cukup untuk proyeksi."}
+
+    total = len(trade_list)
+    total_pnl = sum((t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0) for t in trade_list)
+    wins = sum(1 for t in trade_list if (t.get("profit", 0) or 0) > 0)
+    win_rate = wins / total * 100 if total > 0 else 0
+
+    # Estimate trades per month from date range
+    dates = []
+    for t in trade_list:
+        ts = t.get("closeTime") or t.get("openTime") or ""
+        if ts:
+            try:
+                dates.append(ts[:10])
+            except: pass
+
+    trades_per_month = total / max(1, len(set(d[:7] for d in dates)))
+    avg_pnl_per_trade = total_pnl / total if total > 0 else 0
+
+    prompt = f"""Buat proyeksi ekuitas trading realistis berdasarkan data ini:
+Balance saat ini: ${balance:.2f}
+Total trade: {total} | Win Rate: {win_rate:.1f}%
+Total PnL keseluruhan: ${total_pnl:.2f} | Rata-rata PnL/trade: ${avg_pnl_per_trade:.2f}
+Estimasi trade/bulan: {trades_per_month:.0f}
+Periode proyeksi: {req.months} bulan
+
+Format response singkat dalam Bahasa Indonesia:
+1. Proyeksi ekuitas per bulan (bulan 1 s/d {req.months})
+2. Kondisi paling optimis dan paling pesimis  
+3. Satu saran untuk meningkatkan performa
+Gunakan angka konkret, TANPA teks pembuka/penutup."""
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="grok-3-fast",
+            messages=[
+                {"role": "system", "content": "You are a professional trading performance analyst responding in Indonesian."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5,
+            max_tokens=600
+        )
+        projection = response.choices[0].message.content
+        return {"success": True, "projection": projection, "current_balance": balance, "months": req.months}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 
 class AIAnalyzeRequest(BaseModel):
