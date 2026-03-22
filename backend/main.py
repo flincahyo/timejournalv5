@@ -1650,9 +1650,12 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
         deposit = acc_info.get("deposit", 0)
         account_context = f"Balance: ${balance:.2f}, Equity: ${equity:.2f}, Deposit: ${deposit:.2f}"
 
-        # Fetch ALL trades - no limit
+        # Fetch ALL trades for the ACTIVE account (same filter as dashboard)
         res_trades = await db.execute(
-            select(Trade).where(Trade.user_id == user.id).order_by(Trade.synced_at.desc())
+            select(Trade).where(
+                Trade.user_id == user.id,
+                Trade.account_id == active_acc.id  # KEY: filter by active account only
+            ).order_by(Trade.synced_at.desc())
         )
         all_trades = res_trades.scalars().all()
 
@@ -1749,10 +1752,22 @@ Sessions: {session_summary}
 === CATATAN HARIAN (30 HARI TERAKHIR) ===
 {''.join(daily_detail_lines)}{older_summary}"""
 
+    # -- Current date/time context in WIB --
+    now_wib = datetime.datetime.now(WIB)
+    current_datetime_str = now_wib.strftime("%A, %d %B %Y %H:%M WIB")
+    yesterday_str = (now_wib - datetime.timedelta(days=1)).strftime("%A, %d %B %Y")
+    last_saturday = now_wib - datetime.timedelta(days=(now_wib.weekday() - 5) % 7 or 7)
+    last_saturday_str = last_saturday.strftime("%A, %d %B %Y")
+
     # --- System Prompt ---
     system_prompt = f"""Kamu adalah AI Trading Coach profesional untuk aplikasi TimeJournal.
 Nama kamu: "Grok Coach". Gunakan Bahasa Indonesia yang santai tapi profesional.
 Istilah teknikal boleh tetap Bahasa Inggris. Jawab RINGKAS & tepat sasaran kecuali diminta detail.
+
+WAKTU SAAT INI: {current_datetime_str}
+Kemarin = {yesterday_str}
+Sabtu lalu = {last_saturday_str}
+(Gunakan konteks waktu ini untuk menjawab pertanyaan seperti "kemarin", "minggu lalu", "sabtu kemarin", dll.)
 
 DATA AKUN USER — {user.name}:
 {f"Account: {account_context}" if account_context else "Account: Belum tersambung MT5"}
