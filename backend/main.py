@@ -1702,23 +1702,18 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
                         )
                     except: pass
 
-            # Format daily data — last 30 days with detail, summary for older
-            sorted_days = sorted(daily.keys(), reverse=True)
-            recent_days = sorted_days[:30]
-            older_days = sorted_days[30:]
+            # Format ALL trading days with full detail (no cutoff)
+            sorted_days = sorted(daily.keys(), reverse=True)  # most recent first
 
             daily_detail_lines = []
-            for day in recent_days:
+            for day in sorted_days:
                 d = daily[day]
-                daily_detail_lines.append(f"\n[{day}] Total PnL: ${d['pnl']:.2f} ({len(d['trades'])} trades)")
-                for tl in d["trades"]:
+                daily_detail_lines.append(f"\n[{day}] PnL: ${d['pnl']:.2f} ({len(d['trades'])} trades)")
+                # Cap per-day trade list at 20 to avoid excessive tokens, but still cover every date
+                for tl in d["trades"][:20]:
                     daily_detail_lines.append(f"  · {tl}")
-
-            older_summary = ""
-            if older_days:
-                older_pnl = sum(daily[d]["pnl"] for d in older_days)
-                older_count = sum(len(daily[d]["trades"]) for d in older_days)
-                older_summary = f"\n\n[Periode lebih lama: {older_days[-1]} s/d {older_days[0]}] Total: {older_count} trades, PnL: ${older_pnl:.2f}"
+                if len(d["trades"]) > 20:
+                    daily_detail_lines.append(f"  · ... (+{len(d['trades'])-20} more trades)")
 
             # Session breakdown
             sessions: dict = {}
@@ -1750,8 +1745,8 @@ Profit Factor: {profit_factor:.2f}
 Symbols: {sym_summary}
 Sessions: {session_summary}
 
-=== CATATAN HARIAN (30 HARI TERAKHIR) ===
-{''.join(daily_detail_lines)}{older_summary}"""
+=== CATATAN HARIAN (SEMUA HARI — FULL HISTORY) ===
+{''.join(daily_detail_lines)}"""
 
     # -- Current date/time context in WIB --
     now_wib = datetime.datetime.now(WIB)
