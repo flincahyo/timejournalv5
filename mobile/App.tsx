@@ -101,12 +101,24 @@ const TopNavBar = React.memo(({
           extrapolate: 'clamp',
         });
 
+        // Icon slides left as pill appears so icon+label look centered together
+        const iconTranslateX = scrollX.interpolate({
+          inputRange: [(i - 0.6) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.6) * SCREEN_WIDTH],
+          outputRange: [0, -22, 0],
+          extrapolate: 'clamp',
+        });
+        const labelTranslateX = scrollX.interpolate({
+          inputRange: [(i - 0.5) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.5) * SCREEN_WIDTH],
+          outputRange: [8, 0, 8],
+          extrapolate: 'clamp',
+        });
+
         return (
           <View key={tab.id} style={{ width: 105, alignItems: 'center' }}>
             <TouchableOpacity
               onPress={() => onTabPress(i)}
               activeOpacity={0.75}
-              style={{ alignItems: 'center', justifyContent: 'center' }}
+              style={{ alignItems: 'center', justifyContent: 'center', width: 105 }}
             >
               {/* Animated pill background */}
               <Animated.View style={{
@@ -120,36 +132,36 @@ const TopNavBar = React.memo(({
                 shadowRadius: 8,
                 elevation: 3,
               }} />
-              <Animated.View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                paddingVertical: 9,
-                paddingHorizontal: 14,
-                transform: [{ scale: iconScale }],
-              }}>
-                <Animated.Text style={{ color: iconColor, fontSize: 0 }}>
-                  {/* proxy for icon color — Icon doesn't take Animated.Value, 
-                      so we render it with a fixed color derived from pillOpacity */}
-                </Animated.Text>
-                {/* We use two overlapping icons: inactive (white) fades out, active (purple) fades in */}
-                <View style={{ width: 16, height: 16 }}>
-                  <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
-                    <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
-                  </Animated.View>
-                  <Animated.View style={{ position: 'absolute', opacity: pillOpacity }}>
-                    <Icon size={16} strokeWidth={2.5} color="#6366f1" />
-                  </Animated.View>
-                </View>
+
+              {/* Fixed-height row so pill height stays consistent */}
+              <View style={{ height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                {/* Icon — always centered, slides left when active */}
+                <Animated.View style={{
+                  transform: [{ translateX: iconTranslateX }, { scale: iconScale }],
+                }}>
+                  <View style={{ width: 16, height: 16 }}>
+                    <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
+                      <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
+                    </Animated.View>
+                    <Animated.View style={{ position: 'absolute', opacity: pillOpacity }}>
+                      <Icon size={16} strokeWidth={2.5} color="#6366f1" />
+                    </Animated.View>
+                  </View>
+                </Animated.View>
+
+                {/* Label — absolutely positioned, fades in beside the shifted icon */}
                 <Animated.Text style={{
+                  position: 'absolute',
+                  left: '50%',
+                  marginLeft: 4,
                   fontSize: 13, fontWeight: '800', letterSpacing: -0.2,
                   color: '#6366f1',
                   opacity: labelOpacity,
-                  maxWidth: 72,
+                  transform: [{ translateX: labelTranslateX }],
                 }}>
                   {tab.label}
                 </Animated.Text>
-              </Animated.View>
+              </View>
             </TouchableOpacity>
           </View>
         );
