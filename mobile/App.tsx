@@ -77,41 +77,29 @@ const TopNavBar = React.memo(({
       {TABS.map((tab, i) => {
         const { Icon } = tab;
 
-        // ── Pill: opacity fades in steeply as you center on this tab ──────────
+        // Pill fades in as you swipe to this tab
         const pillOpacity = scrollX.interpolate({
           inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
           outputRange: [0, 1, 0],
           extrapolate: 'clamp',
         });
-        // Pill scale: grows from 0.82 → 1 as it appears (smooth materialize)
-        const pillScale = scrollX.interpolate({
-          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
-          outputRange: [0.82, 1, 0.82],
-          extrapolate: 'clamp',
-        });
-        // Pill floats up slightly as it materializes
-        const pillTranslateY = scrollX.interpolate({
-          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
-          outputRange: [3, 0, 3],
-          extrapolate: 'clamp',
-        });
-        // Icon scale pulses from 0.88 → 1.0
+        // Whole pill content scales up slightly when active
         const iconScale = scrollX.interpolate({
           inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
           outputRange: [0.88, 1, 0.88],
           extrapolate: 'clamp',
         });
-        // Label fades in fast only near center
+        // Label fades in only near center
         const labelOpacity = scrollX.interpolate({
           inputRange: [(i - 0.35) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.35) * SCREEN_WIDTH],
           outputRange: [0, 1, 0],
           extrapolate: 'clamp',
         });
 
-        // Label container maxWidth: 0 (no space) → 80 (full label visible)
+        // Label maxWidth: 0 → 72 (collapsed when inactive, label takes no space)
         const labelMaxWidth = scrollX.interpolate({
           inputRange: [(i - 0.45) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.45) * SCREEN_WIDTH],
-          outputRange: [0, 80, 0],
+          outputRange: [0, 72, 0],
           extrapolate: 'clamp',
         });
 
@@ -122,7 +110,7 @@ const TopNavBar = React.memo(({
               activeOpacity={0.75}
               style={{ alignItems: 'center', justifyContent: 'center', width: 105 }}
             >
-              {/* Animated pill background — scales + floats up as it materializes */}
+              {/* Animated pill background — simple opacity fade, no bounce */}
               <Animated.View style={{
                 position: 'absolute',
                 inset: 0,
@@ -133,23 +121,19 @@ const TopNavBar = React.memo(({
                 shadowOpacity: 0.10,
                 shadowRadius: 8,
                 elevation: 3,
-                transform: [{ scale: pillScale }, { translateY: pillTranslateY }],
               }} />
 
-              {/* Icon + Label in a centered flex row.
-                  Label container has maxWidth 0→80 so when collapsed it takes
-                  no space — icon stays centered. When expanded, row grows and
-                  the icon naturally shifts left. */}
+              {/* Icon + label in flex row — label collapses to width:0 when inactive
+                  so icon is always naturally centered */}
               <Animated.View style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 6,
                 paddingVertical: 9,
                 paddingHorizontal: 14,
-                alignSelf: 'center',
                 transform: [{ scale: iconScale }],
               }}>
-                {/* Dual-icon for color crossfade */}
+                {/* Dual icon: white (inactive) fades out, purple (active) fades in */}
                 <View style={{ width: 16, height: 16 }}>
                   <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
                     <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
@@ -159,16 +143,19 @@ const TopNavBar = React.memo(({
                   </Animated.View>
                 </View>
 
-                {/* Label: maxWidth collapses to 0 so zero layout space when inactive */}
-                <Animated.View style={{ maxWidth: labelMaxWidth, overflow: 'hidden' }}>
-                  <Animated.Text style={{
+                {/* Label: maxWidth 0→72, overflow hidden — no layout impact when collapsed */}
+                <Animated.Text
+                  numberOfLines={1}
+                  style={{
                     fontSize: 13, fontWeight: '800', letterSpacing: -0.2,
                     color: '#6366f1',
                     opacity: labelOpacity,
-                  }}>
-                    {tab.label}
-                  </Animated.Text>
-                </Animated.View>
+                    maxWidth: labelMaxWidth,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {tab.label}
+                </Animated.Text>
               </Animated.View>
             </TouchableOpacity>
           </View>
