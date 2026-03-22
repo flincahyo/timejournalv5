@@ -58,11 +58,11 @@ const TABS = [
 ];
 const DEFAULT_TAB = 1;
 
-// ── Top Navigation Bar — flat individual tabs ────────────────────────────────
+// ── Top Navigation Bar — pill driven by scrollX in real-time ────────────────
 const TopNavBar = React.memo(({
-  activeTab, onTabPress, isDark,
+  scrollX, onTabPress, isDark,
 }: {
-  activeTab: number;
+  scrollX: Animated.Value;
   onTabPress: (i: number) => void;
   isDark: boolean;
 }) => {
@@ -75,42 +75,81 @@ const TopNavBar = React.memo(({
       gap: 8,
     }}>
       {TABS.map((tab, i) => {
-        const isActive = activeTab === i;
         const { Icon } = tab;
+
+        // Pill alpha: 1 when scrollX == i*W, fades out as you swipe away
+        const pillOpacity = scrollX.interpolate({
+          inputRange: [(i - 1) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 1) * SCREEN_WIDTH],
+          outputRange: [0, 1, 0],
+          extrapolate: 'clamp',
+        });
+        // Icon/label color: interpolate between active (#6366f1) and inactive
+        const iconScale = scrollX.interpolate({
+          inputRange: [(i - 1) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 1) * SCREEN_WIDTH],
+          outputRange: [0.85, 1, 0.85],
+          extrapolate: 'clamp',
+        });
+        // Label width collapses when not active (uses opacity so layout stays)
+        const labelOpacity = scrollX.interpolate({
+          inputRange: [(i - 0.4) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.4) * SCREEN_WIDTH],
+          outputRange: [0, 1, 0],
+          extrapolate: 'clamp',
+        });
+        const iconColor = scrollX.interpolate({
+          inputRange: [(i - 0.5) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.5) * SCREEN_WIDTH],
+          outputRange: ['rgba(255,255,255,0.65)', '#6366f1', 'rgba(255,255,255,0.65)'],
+          extrapolate: 'clamp',
+        });
+
         return (
           <View key={tab.id} style={{ width: 105, alignItems: 'center' }}>
             <TouchableOpacity
               onPress={() => onTabPress(i)}
               activeOpacity={0.75}
-              style={{
+              style={{ alignItems: 'center', justifyContent: 'center' }}
+            >
+              {/* Animated pill background */}
+              <Animated.View style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 24,
+                backgroundColor: '#ffffff',
+                opacity: pillOpacity,
+                shadowColor: '#000',
+                shadowOpacity: 0.10,
+                shadowRadius: 8,
+                elevation: 3,
+              }} />
+              <Animated.View style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 6,
                 paddingVertical: 9,
-                paddingHorizontal: isActive ? 18 : 14,
-                borderRadius: 24,
-                backgroundColor: isActive ? '#ffffff' : 'transparent',
-                shadowColor: '#000',
-                shadowOpacity: isActive ? 0.1 : 0,
-                shadowRadius: isActive ? 8 : 0,
-                elevation: isActive ? 3 : 0,
-              }}
-            >
-              <Icon
-                size={16}
-                strokeWidth={isActive ? 2.5 : 2}
-                color={isActive ? '#6366f1' : 'rgba(255,255,255,0.75)'}
-              />
-              {isActive && (
-                <Text style={{
-                  fontSize: 13,
-                  fontWeight: '800',
-                  letterSpacing: -0.2,
+                paddingHorizontal: 14,
+                transform: [{ scale: iconScale }],
+              }}>
+                <Animated.Text style={{ color: iconColor, fontSize: 0 }}>
+                  {/* proxy for icon color — Icon doesn't take Animated.Value, 
+                      so we render it with a fixed color derived from pillOpacity */}
+                </Animated.Text>
+                {/* We use two overlapping icons: inactive (white) fades out, active (purple) fades in */}
+                <View style={{ width: 16, height: 16 }}>
+                  <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
+                    <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
+                  </Animated.View>
+                  <Animated.View style={{ position: 'absolute', opacity: pillOpacity }}>
+                    <Icon size={16} strokeWidth={2.5} color="#6366f1" />
+                  </Animated.View>
+                </View>
+                <Animated.Text style={{
+                  fontSize: 13, fontWeight: '800', letterSpacing: -0.2,
                   color: '#6366f1',
+                  opacity: labelOpacity,
+                  maxWidth: 72,
                 }}>
                   {tab.label}
-                </Text>
-              )}
+                </Animated.Text>
+              </Animated.View>
             </TouchableOpacity>
           </View>
         );
@@ -125,11 +164,12 @@ function MainApp() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  const scrollX = useRef(new Animated.Value(DEFAULT_TAB * SCREEN_WIDTH)).current;
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
   const [isPending, startTransitionLocal] = useTransition();
   const [loadedTabs, setLoadedTabs] = useState<Record<number, boolean>>({ [DEFAULT_TAB]: true });
   const [authLoaded, setAuthLoaded] = useState<Record<string, boolean>>({ login: true });
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
   const [backClickCount, setBackClickCount] = useState(0);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [appReady, setAppReady] = useState(false);
@@ -352,7 +392,7 @@ function MainApp() {
     <View style={{ flex: 1, backgroundColor: headerBg }}>
       {/* ── Colored Header Area ─────────────────────────────────────────────── */}
       <View style={{ paddingTop: insets.top + 8, paddingBottom: 16 }}>
-        <TopNavBar activeTab={activeTab} onTabPress={handleTabPress} isDark={isDark} />
+        <TopNavBar scrollX={scrollX} onTabPress={handleTabPress} isDark={isDark} />
       </View>
 
       {/* ── Content Card (rounded top, white in light mode) ───────────────── */}
@@ -363,11 +403,15 @@ function MainApp() {
         borderTopRightRadius: 28,
         overflow: 'hidden',
       }}>
-        <ScrollView
+        <Animated.ScrollView
           ref={scrollRef}
           horizontal pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleScrollEnd}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: false }
+          )}
           bounces={false}
           scrollEventThrottle={16}
           style={{ flex: 1 }}
@@ -406,7 +450,7 @@ function MainApp() {
             <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }} />
           )}
         </View>
-        </ScrollView>
+        </Animated.ScrollView>
 
       {/* ── Notification Center Overlay ──────────────────────────────────── */}
       {showNotifications && (
