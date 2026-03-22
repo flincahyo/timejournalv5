@@ -13,12 +13,13 @@ import AlertsScreen from './AlertsScreen';
 import EconomicCalendarScreen from './EconomicCalendarScreen';
 import TerminalScreen from './TerminalScreen';
 import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
+import AmbientGlow from '../components/AmbientGlow';
 
 // ── Portfolio Tab Skeleton ─────────────────────────────────────────────────────
 function PortfolioTabSkeleton({ isDark }: { isDark: boolean }) {
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}
+      style={{ flex: 1, backgroundColor: 'transparent' }}
       contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
       showsVerticalScrollIndicator={false}
     >
@@ -125,10 +126,11 @@ const PortfolioScreen = React.memo(({ onLogout, initialTab = 0, onUserUpdated }:
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }}>
+      <AmbientGlow isDark={isDark} />
       {/* ── Sub-Tab Bar ──────────────────────────────────────────────────────── */}
       <View style={{
         paddingHorizontal: 20, paddingTop: 16, paddingBottom: 0,
-        backgroundColor: isDark ? C.bg.dark : C.bg.light,
+        backgroundColor: 'transparent',
       }}>
         <Text style={{ fontSize: 22, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, letterSpacing: -0.5, marginBottom: 16 }}>Portfolio</Text>
 

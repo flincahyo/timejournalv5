@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback, useTransition, startTr
 import { StatusBar } from 'expo-status-bar';
 import {
   View, ScrollView, Dimensions, Text, TouchableOpacity,
-  BackHandler, ToastAndroid, Animated, Easing, Platform, UIManager,
+  BackHandler, ToastAndroid, Animated, Platform, UIManager,
+  Image, Easing
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -24,6 +25,7 @@ import HomeScreen from './screens/HomeScreen';
 import TrackerScreen from './screens/TrackerScreen';
 import PortfolioScreen from './screens/PortfolioScreen';
 import SettingsModal from './screens/SettingsModal';
+import { AIChatScreen } from './screens/AIChatScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
@@ -69,46 +71,48 @@ const TopNavBar = React.memo(({
       flexDirection: 'row',
       paddingHorizontal: 16,
       alignItems: 'center',
-      justifyContent: 'space-around',
+      justifyContent: 'center',
+      gap: 8,
     }}>
       {TABS.map((tab, i) => {
         const isActive = activeTab === i;
         const { Icon } = tab;
         return (
-          <TouchableOpacity
-            key={tab.id}
-            onPress={() => onTabPress(i)}
-            activeOpacity={0.75}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingVertical: 9,
-              paddingHorizontal: isActive ? 18 : 14,
-              borderRadius: 24,
-              backgroundColor: isActive ? '#ffffff' : 'transparent',
-              shadowColor: '#000',
-              shadowOpacity: isActive ? 0.1 : 0,
-              shadowRadius: isActive ? 8 : 0,
-              elevation: isActive ? 3 : 0,
-            }}
-          >
-            <Icon
-              size={16}
-              strokeWidth={isActive ? 2.5 : 2}
-              color={isActive ? '#6366f1' : 'rgba(255,255,255,0.75)'}
-            />
-            {isActive && (
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '800',
-                letterSpacing: -0.2,
-                color: '#6366f1',
-              }}>
-                {tab.label}
-              </Text>
-            )}
-          </TouchableOpacity>
+          <View key={tab.id} style={{ width: 105, alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => onTabPress(i)}
+              activeOpacity={0.75}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingVertical: 9,
+                paddingHorizontal: isActive ? 18 : 14,
+                borderRadius: 24,
+                backgroundColor: isActive ? '#ffffff' : 'transparent',
+                shadowColor: '#000',
+                shadowOpacity: isActive ? 0.1 : 0,
+                shadowRadius: isActive ? 8 : 0,
+                elevation: isActive ? 3 : 0,
+              }}
+            >
+              <Icon
+                size={16}
+                strokeWidth={isActive ? 2.5 : 2}
+                color={isActive ? '#6366f1' : 'rgba(255,255,255,0.75)'}
+              />
+              {isActive && (
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: '800',
+                  letterSpacing: -0.2,
+                  color: '#6366f1',
+                }}>
+                  {tab.label}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         );
       })}
     </View>
@@ -126,8 +130,6 @@ function MainApp() {
   const [loadedTabs, setLoadedTabs] = useState<Record<number, boolean>>({ [DEFAULT_TAB]: true });
   const [authLoaded, setAuthLoaded] = useState<Record<string, boolean>>({ login: true });
   const scrollRef = useRef<ScrollView>(null);
-  // scrollX drives the pill indicator natively — no JS-thread delay
-  const scrollX = useRef(new Animated.Value(DEFAULT_TAB * SCREEN_WIDTH)).current;
   const [backClickCount, setBackClickCount] = useState(0);
   const [userToken, setUserToken] = useState<string | null>(null);
   const [appReady, setAppReady] = useState(false);
@@ -136,8 +138,10 @@ function MainApp() {
   // Shared user state — single source of truth for both Home + Settings
   const [sharedUser, setSharedUser] = useState<any>(null);
 
-  // Settings Modal
+  // Settings Modal & AI Chat
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [aiChatData, setAIChatData] = useState<{ trades: any[]; stats: any }>({ trades: [], stats: undefined });
 
   // Notification Center
   const [showNotifications, setShowNotifications] = useState(false);
@@ -158,7 +162,7 @@ function MainApp() {
       (async () => {
         const lastOpened = await AsyncStorage.getItem('notif_last_opened');
         const lastTs = lastOpened ? new Date(lastOpened).getTime() : 0;
-        const newCount = notifTrades.filter(t => {
+        const newCount = notifTrades.filter((t: any) => {
           const ds = t.closeTime || t.openTime || '';
           if (!ds) return false;
           try {
@@ -171,7 +175,7 @@ function MainApp() {
       })();
     } else if (notifTrades.length > prev) {
       // New trades arrived — increment immediately, no async lookup needed
-      setUnreadCount(c => Math.min(c + (notifTrades.length - prev), 20));
+      setUnreadCount((c: number) => Math.min(c + (notifTrades.length - prev), 20));
       prevTradesCountRef.current = notifTrades.length;
     } else {
       prevTradesCountRef.current = notifTrades.length;
@@ -212,7 +216,7 @@ function MainApp() {
       if (userToken === null) {
         setActiveTab(DEFAULT_TAB);
         setPortfolioInitialTab(0);
-        scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
+        scrollRef.current?.scrollTo({ x: DEFAULT_TAB * SCREEN_WIDTH, animated: false });
       }
     }
   };
@@ -226,9 +230,9 @@ function MainApp() {
       startTransition(() => {
         setActiveTab(DEFAULT_TAB);
         setPortfolioInitialTab(0);
-        scrollX.setValue(DEFAULT_TAB * SCREEN_WIDTH);
         setLoadedTabs({ [DEFAULT_TAB]: true });
       });
+      scrollRef.current?.scrollTo({ x: DEFAULT_TAB * SCREEN_WIDTH, animated: false });
       setSharedUser(null);
     } catch (e) { console.error(e); }
   }, []);
@@ -255,20 +259,13 @@ function MainApp() {
   const navigateTo = useCallback((index: number, portfolioTab?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (portfolioTab !== undefined) setPortfolioInitialTab(portfolioTab);
-    
-    // 1. Mark tab as loaded immediately so it can start mounting
     setLoadedTabs(prev => ({ ...prev, [index]: true }));
-
-    // 2. Pill and Scroll: instant visual feedback (no re-render needed)
-    scrollX.setValue(index * SCREEN_WIDTH);
-    scrollRef.current?.scrollTo({ x: index * SCREEN_WIDTH, animated: false });
-
-    // 3. Defer activeTab state update to AFTER scroll so setActiveTab re-render
-    // doesn't block the scroll/content switch on the JS thread
+    // Smooth animated scroll — no more jumping
+    scrollRef.current?.scrollTo({ x: index * SCREEN_WIDTH, animated: true });
     startTransitionLocal(() => {
       setActiveTab(index);
     });
-  }, [scrollX]);
+  }, []);
 
   const handleScrollEnd = useCallback((e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -301,6 +298,9 @@ function MainApp() {
 
   useEffect(() => {
     const backAction = () => {
+      if (showAIChat) { setShowAIChat(false); return true; }
+      if (showSettingsModal) { setShowSettingsModal(false); return true; }
+      if (showNotifications) { setShowNotifications(false); return true; }
       if (activeTab !== DEFAULT_TAB) { navigateTo(DEFAULT_TAB); return true; }
       if (backClickCount === 1) { BackHandler.exitApp(); return true; }
       setBackClickCount(1);
@@ -310,7 +310,7 @@ function MainApp() {
     };
     const sub = BackHandler.addEventListener("hardwareBackPress", backAction);
     return () => sub.remove();
-  }, [backClickCount, activeTab]);
+  }, [backClickCount, activeTab, showAIChat, showSettingsModal, showNotifications]);
 
   const authOffset = useSharedValue(0);
 
@@ -363,19 +363,16 @@ function MainApp() {
         borderTopRightRadius: 28,
         overflow: 'hidden',
       }}>
-        <Animated.ScrollView
+        <ScrollView
           ref={scrollRef}
           horizontal pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleScrollEnd}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: true }
-          )}
           bounces={false}
-          scrollEventThrottle={1}
+          scrollEventThrottle={16}
           style={{ flex: 1 }}
           contentOffset={{ x: DEFAULT_TAB * SCREEN_WIDTH, y: 0 }}
+          decelerationRate="fast"
         >
         {/* Tab 0: Tracker */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
@@ -388,6 +385,7 @@ function MainApp() {
             <HomeScreen
               onNavigate={handleHomeNavigate}
               onOpenSettings={openSettings}
+              onOpenAIChat={(trades: any[], stats: any) => { setAIChatData({ trades, stats }); setShowAIChat(true); }}
               user={sharedUser}
               unreadNotifications={unreadCount}
             />
@@ -408,7 +406,7 @@ function MainApp() {
             <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }} />
           )}
         </View>
-        </Animated.ScrollView>
+        </ScrollView>
 
       {/* ── Notification Center Overlay ──────────────────────────────────── */}
       {showNotifications && (
@@ -430,6 +428,14 @@ function MainApp() {
         onLogout={handleLogout}
         onUserUpdated={handleUserUpdated}
       />
+      
+      {/* ── AI Chat Overlay ────────────────────────────────────────────── */}
+      <AIChatScreen 
+        visible={showAIChat} 
+        onClose={() => setShowAIChat(false)}
+        trades={aiChatData.trades}
+        stats={aiChatData.stats}
+      />
       </View>
     </View>
   );
@@ -438,22 +444,54 @@ function MainApp() {
 export default function App() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const [fontsLoaded] = useFonts({ Montserrat_400Regular, Montserrat_700Bold });
+  
+  const splashAnimY = useRef(new Animated.Value(0)).current;
+  const [isSplashAnimationComplete, setAnimationComplete] = useState(false);
 
   useEffect(() => {
-    // Set light mode as default on first launch (user can still toggle in Settings)
+    // Set light mode as default on first launch
     setColorScheme('light');
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync();
+    if (fontsLoaded) {
+      // Hide the native splash screen (which natively fades out the logo)
+      SplashScreen.hideAsync().then(() => {
+        // Wait 300ms for the native UI to completely fade out, leaving our solid Indigo curtain
+        setTimeout(() => {
+          // Trigger the smooth curtain slide-up animation
+          Animated.timing(splashAnimY, {
+            toValue: -Dimensions.get('window').height,
+            duration: 1200, // Slightly slower, more luxurious 
+            useNativeDriver: true,
+            easing: Easing.bezier(0.25, 1, 0.5, 1),
+          }).start(() => {
+            setAnimationComplete(true);
+          });
+        }, 300);
+      }).catch(() => {
+         setAnimationComplete(true);
+      });
+    }
   }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#4f46e5' }}>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} translucent backgroundColor="transparent" />
       <MainApp />
+
+      {/* Solid Curtain Splash Screen Overlay */}
+      {!isSplashAnimationComplete && (
+        <Animated.View style={{
+           position: 'absolute',
+           inset: 0,
+           backgroundColor: '#4f46e5', // Solid Indigo curtain
+           transform: [{ translateY: splashAnimY }],
+           zIndex: 999999,
+        }} />
+      )}
     </SafeAreaProvider>
   );
 }

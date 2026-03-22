@@ -1620,6 +1620,113 @@ async def update_settings(req: SettingsUpdateRequest, user: User = Depends(get_c
 
 
 # ── AI Endpoints ──────────────────────────────────────────────────────────────
+
+class AIChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class AIChatRequest(BaseModel):
+    messages: List[AIChatMessage]
+    context_type: str = "general"  # "general" | "analyst" | "risk" | "psychology"
+
+@app.post("/api/ai/chat")
+async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not XAI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="xAI (Grok) tidak tersedia. Periksa API key.")
+
+    # --- Fetch user trade context from DB ---
+    res_acc = await db.execute(
+        select(MT5Account).where(MT5Account.user_id == user.id, MT5Account.is_active == True)
+    )
+    active_acc = res_acc.scalar_one_or_none()
+
+    trade_context = ""
+    account_context = ""
+    stats_context = ""
+
+    if active_acc:
+        # Account info
+        acc_info = active_acc.account_info or {}
+        balance = acc_info.get("balance", 0)
+        equity = acc_info.get("equity", 0)
+        account_context = f"Balance: ${balance:.2f}, Equity: ${equity:.2f}"
+
+        # Recent trades (last 30)
+        res_trades = await db.execute(
+            select(Trade).where(Trade.user_id == user.id).order_by(Trade.synced_at.desc()).limit(50)
+        )
+        trades = res_trades.scalars().all()
+
+        if trades:
+            trade_list = [t.data for t in trades if t.data]
+            total = len(trade_list)
+            wins = sum(1 for t in trade_list if (t.get("profit", 0) or 0) > 0)
+            losses = total - wins
+            total_pnl = sum((t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0) for t in trade_list)
+            win_rate = (wins / total * 100) if total > 0 else 0
+
+            # Symbol breakdown
+            symbols: dict = {}
+            for t in trade_list:
+                sym = t.get("symbol", "N/A")
+                pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
+                if sym not in symbols:
+                    symbols[sym] = {"count": 0, "pnl": 0.0}
+                symbols[sym]["count"] += 1
+                symbols[sym]["pnl"] += pnl
+
+            sym_summary = ", ".join([f"{s}: {v['count']} trades (${v['pnl']:.2f})" for s, v in list(symbols.items())[:5]])
+
+            # Recent 10 trades detail
+            recent_detail = []
+            for t in trade_list[:10]:
+                pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
+                recent_detail.append(
+                    f"  - {t.get('symbol','?')} {t.get('type','?')} {t.get('lots', t.get('volume', 0))} lots | PnL: ${pnl:.2f} | Setup: {t.get('setup','N/A')} | Emosi: {t.get('emotion','N/A')} | Session: {t.get('session','N/A')}"
+                )
+
+            stats_context = f"""
+Total Trades: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%
+Total PnL: ${total_pnl:.2f}
+Symbols Aktif: {sym_summary}
+10 Trade Terakhir:
+{chr(10).join(recent_detail)}"""
+
+    # --- System Prompt ---
+    system_prompt = f"""Kamu adalah AI Trading Coach profesional bernama "Grok Coach" untuk aplikasi trading journal TimeJournal.
+Gaya bahasa: santai tapi profesional. Gunakan Bahasa Indonesia. Istilah teknikal boleh pakai Bahasa Inggris.
+JANGAN gunakan markdown berlebihan. Jawab ringkas dan langsung ke poin jika tidak diminta detail.
+
+DATA REAL-TIME USER (HANYA UNTUK REFERENSI, JANGAN EXPOSE KE USER):
+Nama User: {user.name}
+{f"Account Info: {account_context}" if account_context else "Account: Belum tersambung MT5"}
+{stats_context if stats_context else ""}
+
+ATURAN:
+1. Hanya akses data milik user ini. Jangan buat data fiktif.
+2. Jika user tanya data yang tidak ada, katakan dengan jujur.
+3. Untuk analisis mendalam, gunakan data trade yang tersedia di atas.
+4. Kamu bisa menjawab pertanyaan umum tentang trading, psikologi, dan strategi.
+5. Jangan roleplay menjadi karakter lain selain Trading Coach."""
+
+    # --- Build messages for xAI ---
+    grok_messages = [{"role": "system", "content": system_prompt}]
+    for msg in req.messages:
+        grok_messages.append({"role": msg.role, "content": msg.content})
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="grok-3-fast",
+            messages=grok_messages,
+            temperature=0.7,
+            max_tokens=1200
+        )
+        reply = response.choices[0].message.content
+        return {"success": True, "reply": reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class AIAnalyzeRequest(BaseModel):
     totalTrades: int
     winRate: float

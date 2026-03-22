@@ -14,6 +14,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming,
   withRepeat, useAnimatedKeyboard, interpolate, Extrapolation
 } from 'react-native-reanimated';
+import LottieView from 'lottie-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -137,10 +138,12 @@ export default function LoginScreen({ onLoginSuccess, onRegister }: { onLoginSuc
           <BrandLogo size={23} whiteJournal={true} />
         </View>
 
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 0, marginTop: -40 }}>
-          <Image
-            source={require('../assets/splash-login.png')}
-            style={{ width: SCREEN_WIDTH * 1.1, height: SCREEN_HEIGHT * 0.48 }}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 0, marginTop: -130 }}>
+          <LottieView
+            source={require('../assets/business-salesman.json')}
+            autoPlay
+            loop
+            style={{ width: SCREEN_WIDTH * 1.0, height: SCREEN_HEIGHT * 0.45 }}
             resizeMode="contain"
           />
         </View>

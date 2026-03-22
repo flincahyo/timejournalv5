@@ -5,6 +5,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import HistoryScreen from './HistoryScreen';
 import StatsScreen from './StatsScreen';
+import AmbientGlow from '../components/AmbientGlow';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -66,6 +67,7 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }}>
+      <AmbientGlow isDark={isDark} />
       {/* ── Sub-Tab Bar ──────────────────────────────────────────────────────── */}
       <View style={{
         paddingHorizontal: 20, paddingTop: 16, paddingBottom: 0,
@@ -117,12 +119,12 @@ const TrackerScreen = React.memo(({ onNavigate }: { onNavigate: (s: string) => v
       >
         {/* Tab 0: Journal (HistoryScreen) */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          {loadedTabs[0] ? <HistoryScreen /> : <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }} />}
+          {loadedTabs[0] ? <HistoryScreen /> : <View style={{ flex: 1, backgroundColor: 'transparent' }} />}
         </View>
 
         {/* Tab 1: Analytics (StatsScreen) */}
         <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-          {loadedTabs[1] ? <StatsScreen /> : <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }} />}
+          {loadedTabs[1] ? <StatsScreen /> : <View style={{ flex: 1, backgroundColor: 'transparent' }} />}
         </View>
       </ScrollView>
     </View>

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Ani
 import { useColorScheme } from 'nativewind';
 import { 
   Calendar, BrainCircuit, Filter, ChevronLeft, ChevronRight, X, Sparkles, Brain, 
-  RefreshCw, Clock, Globe, Bell, BellRing, Settings, Sliders, Check, Music
+  RefreshCw, Clock, Globe, Bell, BellRing, Settings, Sliders, Check, Music, ArrowLeft
 } from 'lucide-react-native';
 import { AILoadingAnimation } from '../components/AILoadingAnimation';
 import * as Haptics from 'expo-haptics';
@@ -109,6 +109,10 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
   const [loading, setLoading] = useState(true);
   const [activeDayIdx, setActiveDayIdx] = useState(0);
 
+  // Filters State
+  const [filterImpact, setFilterImpact] = useState<string>('All');
+  const [filterCountry, setFilterCountry] = useState<string>('All');
+
   // News Alerts State
   const [newsSettings, setNewsSettings] = useState<any>({
     enabled: true,
@@ -122,6 +126,18 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiInsights, setAiInsights] = useState("");
+
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const slideYAI = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const slideYSet = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    Animated.spring(slideYAI, { toValue: aiModalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [aiModalVisible]);
+
+  useEffect(() => {
+    Animated.spring(slideYSet, { toValue: settingsModalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [settingsModalVisible]);
 
   useEffect(() => {
     fetchEvents();
@@ -192,16 +208,24 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
     }
   };
 
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => {
+      if (filterImpact !== 'All' && e.impact !== filterImpact) return false;
+      if (filterCountry !== 'All' && e.country !== filterCountry) return false;
+      return true;
+    });
+  }, [events, filterImpact, filterCountry]);
+
   const dayGroups = useMemo(() => {
     const groups: Record<string, FFEvent[]> = {};
-    events.forEach(e => {
+    filteredEvents.forEach(e => {
         const d = new Date(e.date);
         const dateKey = d.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         if (!groups[dateKey]) groups[dateKey] = [];
         groups[dateKey].push(e);
     });
     return groups;
-  }, [events]);
+  }, [filteredEvents]);
 
   const dayKeys = Object.keys(dayGroups);
   const activeDayKey = dayKeys[activeDayIdx] || "";
@@ -263,11 +287,11 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#ffffff' }}>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, paddingBottom: 60, paddingTop: 16 }} showsVerticalScrollIndicator={false}>
         
         {/* Header */}
-        <View style={{ marginBottom: 32, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <View style={{ marginBottom: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
            <View>
               <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>
                 Global Macro Pulse
@@ -288,6 +312,48 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
                 loading={isGeneratingAI} 
               />
            </View>
+        </View>
+
+        {/* Filters */}
+        <View style={{ marginBottom: 24, gap: 12 }}>
+          {/* Impact Filters */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {['All', 'High', 'Medium', 'Low'].map(imp => {
+              let bg = isDark ? '#1e293b' : '#f1f5f9';
+              if (filterImpact === imp) {
+                if (imp === 'High') bg = '#ef4444';
+                else if (imp === 'Medium') bg = '#f59e0b';
+                else if (imp === 'Low') bg = '#64748b';
+                else bg = '#6366f1'; // All
+              }
+              return (
+                <TouchableOpacity key={imp} onPress={() => { Haptics.selectionAsync(); setFilterImpact(imp); setActiveDayIdx(0); }}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16,
+                    backgroundColor: bg,
+                  }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: filterImpact === imp ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b') }}>
+                    {imp === 'All' ? 'All Impacts' : `${imp} Impact`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Country Filters */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {['All', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD', 'CNY'].map(c => (
+              <TouchableOpacity key={c} onPress={() => { Haptics.selectionAsync(); setFilterCountry(c); setActiveDayIdx(0); }}
+                style={{
+                  paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16,
+                  backgroundColor: filterCountry === c ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'),
+                  flexDirection: 'row', alignItems: 'center', gap: 6
+                }}>
+                <Text style={{ fontSize: 13 }}>{c === 'All' ? '🌍' : getFlagEmoji(c)}</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: filterCountry === c ? '#ffffff' : (isDark ? '#94a3b8' : '#64748b') }}>{c}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Minimalist Day Selector */}
@@ -412,29 +478,33 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
       </ScrollView>
 
       {/* AI Modal - Premium DNA Alignment */}
-      <Modal visible={aiModalVisible} animationType="slide" transparent={true}>
-         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
-            <View style={{ 
-              height: '85%', backgroundColor: isDark ? '#020617' : '#ffffff',
-              borderTopLeftRadius: 40, borderTopRightRadius: 40,
-              padding: 24, paddingBottom: 40
-            }}>
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                     <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }}>
-                        <Brain size={24} color="#ffffff" />
-                     </View>
-                     <View>
-                        <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', fontFamily: 'Montserrat_700Bold' }}>Market Intelligence</Text>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Deep Fundamental Correlation</Text>
-                     </View>
-                  </View>
-                  <TouchableOpacity onPress={() => setAiModalVisible(false)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', alignItems: 'center', justifyContent: 'center' }}>
-                     <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
-                  </TouchableOpacity>
-               </View>
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 110, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYAI }] }}
+        pointerEvents={aiModalVisible ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAiModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>Market Intelligence</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>DEEP FUNDAMENTAL CORRELATION</Text>
+            </View>
+          </View>
 
-               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
                   {!aiInsights && !isGeneratingAI && (
                     <View style={{ alignItems: 'center', paddingVertical: 40 }}>
                        <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: 'rgba(99, 102, 241, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
@@ -480,33 +550,36 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
                     </View>
                   )}
                </ScrollView>
-            </View>
-         </View>
-      </Modal>
+        </View>
+      </Animated.View>
       {/* News Alerts Settings Modal */}
-      <Modal visible={settingsModalVisible} animationType="slide" transparent={true}>
-         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
-            <View style={{ 
-              height: '50%', backgroundColor: isDark ? '#020617' : '#ffffff',
-              borderTopLeftRadius: 40, borderTopRightRadius: 40,
-              padding: 24, paddingBottom: 40
-            }}>
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                     <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: '#6366f1', alignItems: 'center', justifyContent: 'center' }}>
-                        <Sliders size={20} color="#ffffff" />
-                     </View>
-                     <View>
-                        <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', fontFamily: 'Montserrat_700Bold' }}>News Notification</Text>
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Configure Alert Signals</Text>
-                     </View>
-                  </View>
-                  <TouchableOpacity onPress={() => setSettingsModalVisible(false)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', alignItems: 'center', justifyContent: 'center' }}>
-                     <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
-                  </TouchableOpacity>
-               </View>
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 120, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYSet }] }}
+        pointerEvents={settingsModalVisible ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSettingsModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>News Notification</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>CONFIGURE ALERT SIGNALS</Text>
+            </View>
+          </View>
 
-               <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
                   {/* Auto High Impact Toggle */}
                   <TouchableOpacity 
                     onPress={() => updateNewsSettings({ autoHighImpact: !newsSettings.autoHighImpact })}
@@ -556,9 +629,8 @@ const EconomicCalendarScreen = React.memo(function EconomicCalendarScreen({ onNa
                      <Text style={{ color: '#6366f1', fontWeight: '900', fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 }}>Done</Text>
                   </TouchableOpacity>
                </ScrollView>
-            </View>
-         </View>
-      </Modal>
+        </View>
+      </Animated.View>
     </View>
   );
 });

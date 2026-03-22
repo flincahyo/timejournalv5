@@ -57,6 +57,16 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
   const currentPrice = rawPrice ? (typeof rawPrice === 'object' ? (rawPrice as any).bid : rawPrice) : null;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideYAdd = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const slideYSymbol = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    Animated.spring(slideYAdd, { toValue: isModalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [isModalVisible]);
+
+  useEffect(() => {
+    Animated.spring(slideYSymbol, { toValue: isSymbolModalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [isSymbolModalVisible]);
 
   useEffect(() => {
     fetchAlerts();
@@ -309,7 +319,7 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
   const lbl = { fontSize: 10, fontWeight: '900' as const, color: isDark ? '#475569' : '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8, paddingHorizontal: 4 };
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#ffffff' }}>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <ScrollView 
         style={{ flex: 1 }} 
         contentContainerStyle={{ padding: 24, paddingBottom: 60, paddingTop: 16 }} 
@@ -426,22 +436,32 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
       </ScrollView>
 
       {/* Creation Modal - Premium Sheet */}
-      <Modal visible={isModalVisible} animationType="slide" transparent={true}>
-         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
-            <View style={{ 
-              height: '75%', backgroundColor: isDark ? '#020617' : '#ffffff',
-              borderTopLeftRadius: 40, borderTopRightRadius: 40,
-              padding: 24, paddingBottom: 40
-            }}>
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-                  <View>
-                     <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', fontFamily: 'Montserrat_700Bold' }}>Watch Parameter</Text>
-                     <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Initialize Execution Guard</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setModalVisible(false)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc', alignItems: 'center', justifyContent: 'center' }}>
-                     <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
-                  </TouchableOpacity>
-               </View>
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 110, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYAdd }] }}
+        pointerEvents={isModalVisible ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>Watch Parameter</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>INITIALIZE EXECUTION GUARD</Text>
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
 
                <View style={{ flexDirection: 'row', marginBottom: 24, backgroundColor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#f1f5f9', borderRadius: 18, padding: 6 }}>
                   <TouchableOpacity 
@@ -612,23 +632,38 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
                     </TouchableOpacity>
                  </View>
                )}
-            </View>
-         </View>
-      </Modal>
+            </ScrollView>
+        </View>
+      </Animated.View>
 
       {/* Symbol Picker Modal */}
-      <Modal visible={isSymbolModalVisible} animationType="fade" transparent={true}>
-         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', padding: 40, justifyContent: 'center' }}>
-            <View style={{ 
-               backgroundColor: isDark ? '#020617' : '#ffffff', borderRadius: 32, 
-               maxHeight: '80%', padding: 24, borderWidth: 1, borderColor: isDark ? '#1e293b' : '#f1f5f9' 
-            }}>
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>Select Ticker</Text>
-                  <TouchableOpacity onPress={() => setSymbolModalVisible(false)} style={{ padding: 8 }}>
-                     <X color={isDark ? '#94a3b8' : '#64748b'} size={24} />
-                  </TouchableOpacity>
-               </View>
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 120, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYSymbol }] }}
+        pointerEvents={isSymbolModalVisible ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSymbolModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>Select Ticker</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>AVAILABLE MARKETS</Text>
+            </View>
+          </View>
+
+          <View style={{ padding: 24, flex: 1 }}>
 
                <TextInput 
                  style={[inp, { marginBottom: 16 }]} 
@@ -665,8 +700,8 @@ const AlertsScreen = React.memo(function AlertsScreen({ onBack }: { onBack?: () 
                   )}
                </ScrollView>
             </View>
-         </View>
-      </Modal>
+        </View>
+      </Animated.View>
     </View>
   );
 });

@@ -9,12 +9,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, BACKEND_URL } from '../Constants';
 import { 
   LogOut, ChevronRight, Bell, Moon, Sun, X, Lock, Link2, BarChart2, 
-  Upload, Music, Send, Camera, ArrowLeft
+  Upload, Music, Send, Camera, ArrowLeft, Sparkles, ShieldCheck, 
+  TrendingUp, Flame, Sprout, Activity, ChevronDown, ChevronUp
 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import MT5SettingsScreen from './MT5SettingsScreen';
 import { AvatarPickerModal } from '../components/AvatarPickerModal';
+import { useAmbientGlowSetting } from '../components/AmbientGlow';
+import { useTradingGuard } from '../hooks/useTradingGuard';
 
 // ── Notification Settings Modal ───────────────────────────────────────────────
 function NotificationSettingsModal({ 
@@ -270,6 +273,7 @@ function NotificationSettingsModal({
   );
 }
 
+
 // ── Main Settings Modal ────────────────────────────────────────────────────────
 export default function SettingsModal({ 
   visible,
@@ -290,11 +294,53 @@ export default function SettingsModal({
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
+  // Ambient Glow Effect
+  const { enabled: glowEnabled, toggle: toggleGlow } = useAmbientGlowSetting();
+
+  // Trading Guard
+  const { settings: guard, saveSettings: setGuard } = useTradingGuard([]);
+
   // Animation States
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const slideY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const slideYMT5 = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeBg = useRef(new Animated.Value(0)).current;
+
+  // Theme Transition States
+  const [themeTransition, setThemeTransition] = useState<'light' | 'dark' | null>(null);
+  const circleScale = useRef(new Animated.Value(0)).current;
+  const iconDrop = useRef(new Animated.Value(-SCREEN_HEIGHT)).current;
+
+  const handleToggleTheme = () => {
+    if (themeTransition) return; // prevent spamming
+    
+    const nextTheme = colorScheme === 'dark' ? 'light' : 'dark';
+    setThemeTransition(nextTheme);
+    circleScale.setValue(0);
+    iconDrop.setValue(-SCREEN_HEIGHT / 2);
+
+    // 1. Expand the background circle and drop the icon
+    Animated.parallel([
+      Animated.timing(circleScale, {
+        toValue: 1, duration: 400, useNativeDriver: true,
+      }),
+      Animated.spring(iconDrop, {
+        toValue: 0, friction: 6, tension: 40, useNativeDriver: true,
+      })
+    ]).start(() => {
+      // 2. Hide changing process by updating theme while screen is fully covered
+      startTransition(() => { toggleColorScheme(); });
+
+      // 3. Pause briefly so the moon/sun can be admired
+      setTimeout(() => {
+        Animated.timing(circleScale, {
+          toValue: 0, duration: 450, useNativeDriver: true,
+        }).start(() => {
+          setThemeTransition(null);
+        });
+      }, 300);
+    });
+  };
 
   React.useEffect(() => {
     Animated.parallel([
@@ -526,7 +572,7 @@ export default function SettingsModal({
               {/* Preferences */}
               <Text style={{ fontSize: 9, fontWeight: '900', color: textM, letterSpacing: 1.5, marginBottom: 8, paddingHorizontal: 4 }}>PREFERENCES</Text>
               <View style={{ backgroundColor: card, borderRadius: 20, paddingHorizontal: 16, marginBottom: 28, borderWidth: 1, borderColor: border }}>
-                <TouchableOpacity onPress={() => startTransition(() => { toggleColorScheme(); })} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                <TouchableOpacity onPress={handleToggleTheme} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
                   <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
                     {colorScheme === 'dark' ? <Moon size={16} color={iconColor} strokeWidth={2} /> : <Sun size={16} color={iconColor} strokeWidth={2} />}
                   </View>
@@ -538,6 +584,112 @@ export default function SettingsModal({
                     <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2 }} />
                   </View>
                 </TouchableOpacity>
+
+                {/* Ambient Glow Toggle */}
+                <TouchableOpacity onPress={() => { Haptics.selectionAsync(); toggleGlow(!glowEnabled); }} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                    <Sparkles size={16} color={iconColor} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.5, marginBottom: 1 }}>AESTHETICS</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: textP }}>Ambient Aurora Glow</Text>
+                  </View>
+                  <View style={{ backgroundColor: glowEnabled ? '#6366f1' : (isDark ? '#1e293b' : '#e2e8f0'), width: 44, height: 26, borderRadius: 13, justifyContent: 'center', paddingHorizontal: 2, alignItems: glowEnabled ? 'flex-end' : 'flex-start' }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2 }} />
+                  </View>
+                </TouchableOpacity>
+
+                <Row icon={Bell} label="Notifications" value="Configure" onPress={() => { Haptics.selectionAsync(); setNotifModalVisible(true); }} last />
+              </View>
+
+              {/* Trading Guard Section */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 }}>
+                <Text style={{ fontSize: 9, fontWeight: '900', color: textM, letterSpacing: 1.5 }}>TRADING GUARD</Text>
+                <View style={{ backgroundColor: isDark ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.05)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                   <Text style={{ fontSize: 8, fontWeight: '900', color: '#10b981' }}>PREMIUM</Text>
+                </View>
+              </View>
+              <View style={{ backgroundColor: card, borderRadius: 20, paddingHorizontal: 16, marginBottom: 28, borderWidth: 1, borderColor: border }}>
+                
+                {/* Main Toggle */}
+                <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setGuard({ ...guard, enabled: !guard.enabled }); }} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                    <ShieldCheck size={16} color={guard.enabled ? '#10b981' : iconColor} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: textP }}>Daily Discipline</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '600', color: textM }}>Psychology safety net</Text>
+                  </View>
+                  <View style={{ backgroundColor: guard.enabled ? '#10b981' : (isDark ? '#1e293b' : '#e2e8f0'), width: 44, height: 26, borderRadius: 13, justifyContent: 'center', paddingHorizontal: 2, alignItems: guard.enabled ? 'flex-end' : 'flex-start' }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' }} />
+                  </View>
+                </TouchableOpacity>
+
+                {guard.enabled && (
+                  <>
+                    {/* Visual Effects Toggle */}
+                    <TouchableOpacity onPress={() => { Haptics.selectionAsync(); setGuard({ ...guard, visualsEnabled: !guard.visualsEnabled }); }} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                        <Sparkles size={16} color={guard.visualsEnabled ? '#10b981' : iconColor} strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: textP }}>Visual Alerts</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: textM }}>Burn & Growth animations</Text>
+                      </View>
+                      <View style={{ backgroundColor: guard.visualsEnabled ? '#10b981' : (isDark ? '#1e293b' : '#e2e8f0'), width: 44, height: 26, borderRadius: 13, justifyContent: 'center', paddingHorizontal: 2, alignItems: guard.visualsEnabled ? 'flex-end' : 'flex-start' }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff' }} />
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Daily Loss Limit */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                        <Flame size={16} color="#ef4444" strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.5, marginBottom: 1 }}>MAX DAILY LOSS</Text>
+                        <TextInput 
+                          value={String(guard.lossLimit)}
+                          onChangeText={(v) => setGuard({ ...guard, lossLimit: Number(v.replace(/[^0-9]/g, '')) })}
+                          keyboardType="numeric"
+                          style={{ fontSize: 16, fontWeight: '800', color: '#ef4444', padding: 0 }}
+                        />
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: textM }}>USD</Text>
+                    </View>
+
+                    {/* Daily Profit Target */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border }}>
+                      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: isDark ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                        <Sprout size={16} color="#10b981" strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: textM, letterSpacing: 0.5, marginBottom: 1 }}>DAILY PROFIT GOAL</Text>
+                        <TextInput 
+                          value={String(guard.profitGoal)}
+                          onChangeText={(v) => setGuard({ ...guard, profitGoal: Number(v.replace(/[^0-9]/g, '')) })}
+                          keyboardType="numeric"
+                          style={{ fontSize: 16, fontWeight: '800', color: '#10b981', padding: 0 }}
+                        />
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: textM }}>USD</Text>
+                    </View>
+
+                    {/* [TEMP] Test Mode Toggles */}
+                    <View style={{ paddingVertical: 16, paddingBottom: 12 }}>
+                       <Text style={{ fontSize: 9, fontWeight: '900', color: '#6366f1', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' }}>🛠️ Debug Test Mode</Text>
+                       <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {(['none', 'loss', 'profit'] as const).map(m => (
+                            <TouchableOpacity key={m} onPress={() => setGuard({ ...guard, testMode: m })} 
+                              style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: guard.testMode === m ? '#6366f1' : (isDark ? '#1e293b' : '#f1f5f9'), borderWidth: 1, borderColor: guard.testMode === m ? '#6366f1' : border }}>
+                               <Text style={{ fontSize: 10, fontWeight: '800', color: guard.testMode === m ? '#fff' : textM, textTransform: 'uppercase' }}>{m}</Text>
+                            </TouchableOpacity>
+                          ))}
+                       </View>
+                    </View>
+                  </>
+                )}
+
                 <Row icon={Bell} label="Notifications" value="Configure" onPress={() => { Haptics.selectionAsync(); setNotifModalVisible(true); }} last />
               </View>
 
@@ -658,6 +810,28 @@ export default function SettingsModal({
           {/* Avatar Picker Modal */}
           <AvatarPickerModal visible={avatarModalVisible} currentImage={avatarUrl} isDark={isDark} onClose={() => setAvatarModalVisible(false)} onAvatarUpdated={(url) => { setAvatarUrl(url); setAvatarModalVisible(false); onUserUpdated?.({ image: url }); }} />
           <NotificationSettingsModal visible={isNotifModalVisible} onClose={() => setNotifModalVisible(false)} isDark={isDark} enabled={notifEnabled} setEnabled={(val: boolean) => { setNotifEnabled(val); saveSettings('news', { enabled: val }); }} priceSound={defaultPriceSound} setPriceSound={(id: string) => { setDefaultPriceSound(id); saveSettings('audio', { price_sound: id }); }} momentumSound={defaultMomentumSound} setMomentumSound={(id: string) => { setDefaultMomentumSound(id); saveSettings('audio', { momentum_sound: id }); }} newsSound={defaultNewsSound} setNewsSound={(id: string) => { setDefaultNewsSound(id); saveSettings('news', { sound: id }); }} availableSounds={availableSounds} setAvailableSounds={setAvailableSounds} />
+
+          {/* Theme Transition Overlay */}
+          {themeTransition && (
+            <View style={{ position: 'absolute', inset: 0, zIndex: 9999, alignItems: 'center', justifyContent: 'center' }} pointerEvents="auto">
+              <Animated.View style={{
+                position: 'absolute',
+                width: SCREEN_HEIGHT * 2, // big enough to cover the screen
+                height: SCREEN_HEIGHT * 2,
+                borderRadius: SCREEN_HEIGHT,
+                backgroundColor: themeTransition === 'dark' ? '#0b0e11' : '#f5f7fa',
+                transform: [{ scale: circleScale }]
+              }} />
+              <Animated.View style={{
+                position: 'absolute',
+                transform: [{ translateY: iconDrop }]
+              }}>
+                {themeTransition === 'dark' 
+                  ? <Moon size={100} color="#f8fafc" strokeWidth={1} /> 
+                  : <Sun size={100} color="#f59e0b" strokeWidth={1} />}
+              </Animated.View>
+            </View>
+          )}
 
         </View>
       </KeyboardAvoidingView>

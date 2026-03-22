@@ -5,13 +5,19 @@ import {
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, Eye, EyeOff, TrendingUp, TrendingDown, Zap, RefreshCw, X, Brain, Sparkles, ChevronRight, Activity } from 'lucide-react-native';
+import { Bell, Eye, EyeOff, TrendingUp, TrendingDown, Zap, RefreshCw, X, Brain, Sparkles, ChevronRight, Activity, Wallet, Lock, Flame, Sprout } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../Constants';
 import { useMT5Sync } from '../hooks/useMT5Sync';
 import { AILoadingAnimation } from '../components/AILoadingAnimation';
 import * as Haptics from 'expo-haptics';
 import { Skeleton, SkeletonCircle, SkeletonRect } from '../components/Skeleton';
+import { AIChatFAB } from '../components/AIChatFAB';
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop, Polygon } from 'react-native-svg';
+import { BrandLogo } from '../components/BrandLogo';
+import AmbientGlow from '../components/AmbientGlow';
+import { useTradingGuard } from '../hooks/useTradingGuard';
+import { TradingGuardVisuals } from '../components/TradingGuardVisuals';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -350,10 +356,74 @@ function HomeScreenSkeleton({ isDark }: { isDark: boolean }) {
   );
 }
 
+// ── Background Equity Chart Component ─────────────────────────────────────────
+const BackgroundEquityChart = React.memo(({ trades, isDark }: { trades: any[], isDark: boolean }) => {
+  const W = SCREEN_WIDTH - 48; // card width roughly based on padding 24 on each side
+  const H = 200; // SVG height to cover background
+  const PAD = 0;
+
+  const { d, fillPts, color } = useMemo(() => {
+    const sorted = [...trades].sort((a, b) => {
+      const ta = a.openTime || a.time || '';
+      const tb = b.openTime || b.time || '';
+      return ta.localeCompare(tb);
+    });
+
+    const cumulative: number[] = [0];
+    let running = 0;
+    sorted.forEach(t => { running += (t.profit || 0); cumulative.push(running); });
+
+    if (cumulative.length < 2) return { d: '', fillPts: '', color: isDark ? '#818cf8' : '#6366f1' };
+
+    const minV = Math.min(...cumulative);
+    const maxV = Math.max(...cumulative);
+    const MathRange = maxV - minV || 1;
+    const isPositive = cumulative[cumulative.length - 1] >= 0;
+    // Using an indigo/purple subtle tone if it's generally positive/negative, or default to indigo to match the card
+    const strokeColor = isDark ? (isPositive ? '#818cf8' : '#f87171') : (isPositive ? '#6366f1' : '#ef4444');
+
+    const toX = (i: number) => PAD + (i / (cumulative.length - 1)) * (W - PAD * 2);
+    // use 60% of height for the chart to keep it subtle at the bottom
+    const toY = (v: number) => H * 0.4 + (1 - (v - minV) / MathRange) * (H * 0.6 - PAD * 2);
+
+    const points = cumulative.map((v, i) => ({ x: toX(i), y: toY(v) }));
+    let dStr = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const cpX = (prev.x + curr.x) / 2;
+      dStr += ` C ${cpX} ${prev.y}, ${cpX} ${curr.y}, ${curr.x} ${curr.y}`;
+    }
+
+    const lastPt = points[points.length - 1];
+    const fillPtsStr = [...points.map(p => `${p.x},${p.y}`), `${lastPt.x},${H}`, `${points[0].x},${H}`].join(' ');
+    
+    return { d: dStr, fillPts: fillPtsStr, color: strokeColor };
+  }, [trades, isDark]);
+
+  if (!d) return null;
+
+  return (
+    <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, opacity: isDark ? 0.15 : 0.08 }}>
+      <Svg width={W} height={H}>
+        <Defs>
+          <SvgLinearGradient id="grad_bg" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={color} stopOpacity="0.8" />
+            <Stop offset="1" stopColor={color} stopOpacity="0.0" />
+          </SvgLinearGradient>
+        </Defs>
+        <Polygon points={fillPts} fill="url(#grad_bg)" />
+        <Path d={d} stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </View>
+  );
+});
+
 // ── Main HomeScreen ───────────────────────────────────────────────────────────
-const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unreadNotifications = 0 }: {
+const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user: userProp, unreadNotifications = 0 }: {
   onNavigate: (s: string) => void,
   onOpenSettings: () => void,
+  onOpenAIChat: (trades: any[], stats: any) => void,
   user?: any,
   unreadNotifications?: number,
 }) => {
@@ -363,14 +433,11 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
   const mode = isDark ? 'dark' : 'light';
 
   const { isConnected, account: accountInfo, trades, loading, refresh } = useMT5Sync();
+  const { status: guardStatus, visualsEnabled } = useTradingGuard(trades);
   const [refreshing, setRefreshing] = useState(false);
   const [hideBalance, setHideBalance] = useState(false);
-  // Use shared user from parent (App.tsx) — falls back to local fetch if not provided yet
   const [localUser, setLocalUser] = useState<any>(null);
   const user = userProp ?? localUser;
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
-  const [showAIModal, setShowAIModal] = useState(false);
 
   useEffect(() => {
     // Only fetch locally if parent hasn't provided user yet
@@ -428,33 +495,6 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
     return { totalPnl, wins, losses, winRate, profitFactor, growth, todayPnl, todayTrades };
   }, [trades, accountInfo]);
 
-  const handleAIAnalyze = useCallback(async () => {
-    if (trades.length === 0) { setShowAIModal(true); setAiInsight("No trade data found. Sync your MT5 account first."); return; }
-    setShowAIModal(true); setIsGeneratingAI(true); setAiInsight(null);
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      const recent = trades.slice(0, 10);
-      const recentWins = recent.filter(t => (t.profit || 0) > 0).length;
-      const payload = {
-        totalTrades: trades.length, winRate: stats.winRate, totalPnl: stats.totalPnl,
-        bestSymbol: 'N/A', worstSymbol: 'N/A',
-        recentStreaks: `${recentWins} wins out of last ${recent.length} trades.`,
-        notes: `Growth: ${stats.growth}%. PF: ${stats.profitFactor.toFixed(2)}.`
-      };
-      const res = await fetch(`${API_URL}/ai/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      setAiInsight(data.success ? data.insight : "AI Analyst unavailable. Check backend API key.");
-    } catch (err) {
-      setAiInsight("Connection error. Please try again.");
-    } finally {
-      setIsGeneratingAI(false);
-    }
-  }, [trades, stats]);
-
   if (loading) {
     return <HomeScreenSkeleton isDark={isDark} />;
   }
@@ -467,6 +507,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? C.bg.dark : C.bg.light }}>
+      <AmbientGlow isDark={isDark} status={guardStatus} />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -488,7 +529,6 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <SparklingButton onPress={handleAIAnalyze} loading={isGeneratingAI} />
               <BellButton
                 onPress={() => onNavigate('notifications')}
                 hasUnread={unreadNotifications > 0}
@@ -497,47 +537,136 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
             </View>
           </View>
 
+          {/* Trading Guard Warning/Goal Banner */}
+          {guardStatus !== 'normal' && (
+            <View style={{ 
+              marginBottom: 16, 
+              paddingHorizontal: 16, 
+              paddingVertical: 10, 
+              borderRadius: 16, 
+              backgroundColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+              borderWidth: 1,
+              borderColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: guardStatus === 'loss_limit' ? '#ef4444' : '#10b981', alignItems: 'center', justifyContent: 'center' }}>
+                {guardStatus === 'loss_limit' ? <Flame size={14} color="#fff" /> : <Sprout size={14} color="#fff" />}
+              </View>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: guardStatus === 'loss_limit' ? '#ef4444' : '#10b981', flex: 1 }}>
+                {guardStatus === 'loss_limit' 
+                  ? `DAILY LIMIT HIT: Stop trading for today.` 
+                  : `GOAL REACHED: Protect your gains!`}
+              </Text>
+            </View>
+          )}
+
           {/* Account Balance Card */}
+          <TradingGuardVisuals status={guardStatus} visualsEnabled={visualsEnabled}>
           <View style={{
-            backgroundColor: isDark ? C.surface.dark : '#ffffff',
-            borderRadius: 24, padding: 22,
-            borderWidth: 1, borderColor: isDark ? C.border.dark : '#e8edf5',
-            shadowColor: C.accent, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3,
+            backgroundColor: isDark ? '#1e1b4b' : '#eef2ff',
+            borderRadius: 32,
+            overflow: 'hidden',
+            borderWidth: 1, 
+            borderColor: isDark ? '#312e81' : '#c7d2fe',
+            shadowColor: guardStatus === 'loss_limit' ? '#ef4444' : (guardStatus === 'profit_goal' ? '#10b981' : '#6366f1'), shadowOpacity: isDark ? 0.3 : 0.15, shadowRadius: 24, elevation: 8,
           }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light, letterSpacing: 1 }}>ACCOUNT BALANCE</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isConnected ? '#10b981' : '#f59e0b' }} />
-                <Text style={{ fontSize: 9, fontWeight: '700', color: isConnected ? '#10b981' : '#f59e0b' }}>{isConnected ? 'LIVE' : 'OFFLINE'}</Text>
+            {/* Background Gradient */}
+            <LinearGradient 
+              colors={isDark ? ['#2d1b4b', '#1e1b4b'] : ['#e0e7ff', '#eef2ff']} 
+              style={{ position: 'absolute', inset: 0 }} 
+            />
+
+            {/* Background Chart SVG */}
+            <BackgroundEquityChart trades={trades} isDark={isDark} />
+
+            {/* Content */}
+            <View style={{ padding: 24 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <BrandLogo size={14} whiteJournal={isDark} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isConnected ? '#10b981' : '#f59e0b' }} />
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: isConnected ? '#10b981' : '#f59e0b', letterSpacing: 0.5 }}>{isConnected ? 'LIVE' : 'OFFLINE'}</Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Wallet size={12} color={isDark ? '#a5b4fc' : '#6366f1'} />
+                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#6366f1', letterSpacing: 1 }}>TOTAL BALANCE</Text>
+              </View>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <Text style={{ fontSize: 40, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b', letterSpacing: -1, flex: 1 }}>{formattedBalance}</Text>
+                <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={{ 
+                    width: 36, height: 36, borderRadius: 18, 
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.1)', 
+                    alignItems: 'center', justifyContent: 'center' 
+                }}>
+                  {hideBalance ? <Eye size={18} color={isDark ? '#a5b4fc' : '#6366f1'} /> : <EyeOff size={18} color={isDark ? '#a5b4fc' : '#6366f1'} />}
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#818cf8' : '#6366f1' }}>Equity ✨</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b' }}>{formattedEquity}</Text>
+                </View>
+                <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {growthNum >= 0 ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: growthNum >= 0 ? '#10b981' : '#ef4444' }}>
+                    {growthNum >= 0 ? '+' : ''}{stats.growth}%
+                  </Text>
+                </View>
+                {accountInfo?.name && (
+                  <>
+                    <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#4f46e5', flexShrink: 1 }} numberOfLines={1}>{accountInfo.name}</Text>
+                  </>
+                )}
               </View>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <Text style={{ fontSize: 34, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, letterSpacing: -1, flex: 1 }}>{formattedBalance}</Text>
-              <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={{ padding: 6 }}>
-                {hideBalance ? <Eye size={20} color={isDark ? C.text2.dark : C.text2.light} /> : <EyeOff size={20} color={isDark ? C.text2.dark : C.text2.light} />}
+
+            {/* Dynamic Sync Button (Full Width Bottom) - Only show if triggered */}
+            {guardStatus !== 'normal' && (
+              <TouchableOpacity
+                onPress={() => {
+                   if (guardStatus === 'loss_limit') {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                   } else if (guardStatus === 'profit_goal') {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                   } else {
+                      Haptics.selectionAsync();
+                   }
+                   refresh();
+                }}
+                disabled={refreshing}
+                style={{
+                  backgroundColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.9)' : (guardStatus === 'profit_goal' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(99, 102, 241, 0.9)'),
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  gap: 8
+                }}
+              >
+                {refreshing ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    {guardStatus === 'loss_limit' ? <Lock size={14} color="#fff" /> : <RefreshCw size={14} color="#fff" />}
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>
+                      {guardStatus === 'loss_limit' ? 'STOP TRADING' : 'TARGET ACHIEVED'}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light }}>Equity</Text>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? C.text.dark : C.text.light }}>{formattedEquity}</Text>
-              </View>
-              <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0' }} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                {growthNum >= 0 ? <TrendingUp size={13} color="#10b981" /> : <TrendingDown size={13} color="#ef4444" />}
-                <Text style={{ fontSize: 11, fontWeight: '900', color: growthNum >= 0 ? '#10b981' : '#ef4444' }}>
-                  {growthNum >= 0 ? '+' : ''}{stats.growth}%
-                </Text>
-              </View>
-              {accountInfo?.name && (
-                <>
-                  <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : '#e2e8f0' }} />
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light }}>{accountInfo.name}</Text>
-                </>
-              )}
-            </View>
+            )}
+
           </View>
-        </View>
+        </TradingGuardVisuals>
+      </View>
 
         {/* ── Content Area ─────────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: 20 }}>
@@ -656,49 +785,19 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, user: userProp, unr
         </View>
       </ScrollView>
 
-      {/* ── AI Modal ──────────────────────────────────────────────────────────── */}
-      <Modal visible={showAIModal} animationType="slide" transparent onRequestClose={() => setShowAIModal(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' }}>
-          <View style={{ height: '85%', backgroundColor: isDark ? '#0b0e11' : '#fff', borderTopLeftRadius: 36, borderTopRightRadius: 36, padding: 24, paddingBottom: 40 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <LinearGradient colors={['#6366f1', '#8b5cf6']} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}>
-                  <Brain size={22} color="#fff" />
-                </LinearGradient>
-                <View>
-                  <Text style={{ fontSize: 17, fontWeight: '900', color: isDark ? C.text.dark : C.text.light }}>AI Trading Intelligence</Text>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 1 }}>Psychological & Technical Audit</Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => setShowAIModal(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, alignItems: 'center', justifyContent: 'center' }}>
-                <X size={20} color={isDark ? C.text2.dark : C.text2.light} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-              {isGeneratingAI ? (
-                <AILoadingAnimation isDark={isDark} message="Dissecting Performance..." subMessage="Evaluating win rate, drawdown, and psychological streaks." />
-              ) : aiInsight ? (
-                <View>
-                  <View style={{ backgroundColor: isDark ? C.surface.dark : '#f8fafc', padding: 20, borderRadius: 24, borderLeftWidth: 4, borderLeftColor: C.accent }}>
-                    {aiInsight.split('\n').map((line, idx) => {
-                      const isBold = line.startsWith('**') || line.trim().endsWith('**');
-                      const clean = line.replace(/\*\*/g, '').replace(/^- /, '• ');
-                      if (!clean.trim()) return <View key={idx} style={{ height: 10 }} />;
-                      return (
-                        <Text key={idx} style={{ fontSize: isBold ? 14 : 13, fontWeight: isBold ? '900' : '500', color: isBold ? (isDark ? '#fff' : '#0f172a') : (isDark ? '#cbd5e1' : '#475569'), lineHeight: 22, marginBottom: isBold ? 8 : 4, marginTop: isBold ? 12 : 0 }}>{clean}</Text>
-                      );
-                    })}
-                  </View>
-                  <TouchableOpacity onPress={handleAIAnalyze} style={{ marginTop: 24, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, paddingVertical: 16, borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <RefreshCw size={16} color={isDark ? C.text2.dark : C.text2.light} />
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? C.text2.dark : C.text2.light }}>REFRESH ANALYSIS</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {/* AI Chat Floating Action Button */}
+
+      <AIChatFAB 
+        onPress={() => onOpenAIChat(trades, stats)} 
+        showProactiveBubble={true} 
+        proactiveMessage={
+            stats.todayTrades === 0 
+              ? "Siap trading hari ini? \uD83D\uDCA1" 
+              : stats.todayPnl >= 0 
+                ? `Profit $${stats.todayPnl.toFixed(2)} mantap! \uD83D\uDD25` 
+                : `Loss $${Math.abs(stats.todayPnl).toFixed(2)}. Evaluasi yuk \uD83E\uDDE0`
+        } 
+      />
     </View>
   );
 });

@@ -47,7 +47,8 @@
     "plugins": [
       "expo-updates",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      "expo-sharing"
     ],
     "updates": {
       "enabled": true,

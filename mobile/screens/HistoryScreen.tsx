@@ -3,13 +3,14 @@ import { format, subDays, isWithinInterval, parseISO, startOfDay, endOfDay, star
 import { 
   View, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, 
   LayoutAnimation, useColorScheme, Platform, PanResponder, Animated, Text, 
-  RefreshControl, Modal, Share
+  RefreshControl, Modal, Share, Dimensions
 } from 'react-native';
 import {
   ChevronLeft, ChevronRight, Search, Calendar, Filter, X,
   FileText, Hash, TrendingUp, TrendingDown, Clock, Tag,
   Smile, Meh, Frown, Zap, PenTool, Edit3, MessageSquare, ChevronDown,
-  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp, Share2, BarChart2, Crosshair
+  Plus, ArrowUp, ArrowDown, Trash2, ChevronUp, Share2, BarChart2, Crosshair,
+  ArrowLeft, Activity
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -269,6 +270,9 @@ const PnLCardCarousel = React.forwardRef<any, {
         snapToInterval={pageW}
         snapToAlignment="center"
         contentContainerStyle={{ paddingHorizontal: 0 }}
+        nestedScrollEnabled={true}
+        directionalLockEnabled={true}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={e => {
           const idx = Math.round(e.nativeEvent.contentOffset.x / pageW);
           const clamped = Math.max(0, Math.min(idx, THEME_KEYS.length - 1));
@@ -448,6 +452,9 @@ const TradeCardCarousel = React.forwardRef<any, {
       <ScrollView
         horizontal pagingEnabled showsHorizontalScrollIndicator={false}
         decelerationRate="fast" snapToInterval={pageW} snapToAlignment="center"
+        nestedScrollEnabled={true}
+        directionalLockEnabled={true}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={e => {
           const idx = Math.max(0, Math.min(Math.round(e.nativeEvent.contentOffset.x / pageW), THEME_KEYS.length - 1));
           setCurrentIdx(idx);
@@ -808,6 +815,22 @@ const CalendarView = ({ calendarDate, setCalendarDate, trades, isDark, onDayPres
   }, [trades]);
 
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [isWeeklyExpanded, setIsWeeklyExpanded] = useState(true);
+  const swiperRef = useRef<ScrollView>(null);
+  const viewWidth = Dimensions.get('window').width - 48; // px-6 is 24 padding each side
+
+  const handleDayPress = (day: Date) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!selectedDay) {
+      setSelectedDay(day);
+      setTimeout(() => swiperRef.current?.scrollTo({ x: 0, animated: true }), 10);
+    } else if (isSameDay(selectedDay, day)) {
+      swiperRef.current?.scrollTo({ x: viewWidth, animated: true });
+      setTimeout(() => setSelectedDay(null), 300); // clear after animation
+    } else {
+      setSelectedDay(day);
+    }
+  };
 
   const selectedDayTrades = useMemo(() => {
     if (!selectedDay) return [];
@@ -815,7 +838,95 @@ const CalendarView = ({ calendarDate, setCalendarDate, trades, isDark, onDayPres
     return trades.filter((t: any) => (t.time || t.openTime || "").split('T')[0] === dKey);
   }, [selectedDay, trades]);
 
+  const weeklyStats = useMemo(() => {
+    const startM = startOfMonth(calendarDate);
+    const weeksData = Array(5).fill(0).map(() => ({ trades: [] as any[] }));
+    
+    trades.forEach((t: any) => {
+      const d = new Date(t.time || t.openTime || "");
+      if (isSameMonth(d, calendarDate)) {
+        const weekIdx = Math.floor((d.getDate() - 1 + startM.getDay()) / 7);
+        if (weekIdx >= 0 && weekIdx < 5) weeksData[weekIdx].trades.push(t);
+        else if (weekIdx === 5) weeksData[4].trades.push(t);
+      }
+    });
+
+    const computeRow = (tradeList: any[]) => {
+      const count = tradeList.length;
+      if (count === 0) return null;
+      const wins = tradeList.filter(t => (t.profit || 0) >= 0);
+      const losses = tradeList.filter(t => (t.profit || 0) < 0);
+      const winPct = (wins.length / count) * 100;
+      const avgGain = wins.length > 0 ? wins.reduce((s, t) => s + (t.profit || 0), 0) / wins.length : 0;
+      const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.profit || 0), 0) / losses.length : 0;
+      const biggestGain = wins.length > 0 ? Math.max(...wins.map(t => t.profit || 0)) : 0;
+      const biggestLoss = losses.length > 0 ? Math.min(...losses.map(t => t.profit || 0)) : 0;
+      const pnl = tradeList.reduce((s, t) => s + (t.profit || 0), 0);
+      return { count, winPct, avgGain, avgLoss, biggestGain, biggestLoss, pnl };
+    };
+
+    const rows = weeksData.map(w => computeRow(w.trades));
+    const allTradesInMonth = weeksData.flatMap(w => w.trades);
+    const totalRow = computeRow(allTradesInMonth);
+    
+    const activeWeeks = rows.filter(r => r !== null).length;
+    let avgRow = null;
+    if (activeWeeks > 0 && totalRow) {
+      avgRow = {
+        count: totalRow.count / activeWeeks,
+        winPct: totalRow.winPct,
+        avgGain: totalRow.avgGain,
+        avgLoss: totalRow.avgLoss, 
+        biggestGain: totalRow.biggestGain, 
+        biggestLoss: totalRow.biggestLoss,
+        pnl: totalRow.pnl / activeWeeks
+      };
+    }
+    return { rows, totalRow, avgRow };
+  }, [trades, calendarDate]);
+
   const weekDays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+  const renderWeeklyCard = (label: string, row: any, isTotal: boolean = false) => {
+    if (!row) return null;
+    return (
+      <View key={label} style={{ 
+        backgroundColor: isDark ? (isTotal ? '#1e293b' : 'rgba(30, 41, 59, 0.4)') : (isTotal ? '#f1f5f9' : '#ffffff'), 
+        borderRadius: 14, padding: 12, marginBottom: 10,
+        borderWidth: 1, borderColor: isDark ? (isTotal ? '#475569' : '#334155') : (isTotal ? '#cbd5e1' : '#e2e8f0'),
+      }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)' }}>{label}</Text>
+          <View style={{ backgroundColor: row.pnl >= 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+             <Text style={{ fontSize: 11, fontWeight: '700', color: row.pnl >= 0 ? '#10b981' : '#ef4444', fontVariant: ['tabular-nums'] }}>{row.pnl >= 0 ? '+' : '-'}${Math.abs(row.pnl).toFixed(2)}</Text>
+          </View>
+        </View>
+        
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+           <View style={{ gap: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                 <Hash size={10} color={isDark ? 'rgba(100,116,139,0.8)' : 'rgba(148,163,184,0.8)'} strokeWidth={2.5} />
+                 <Text style={{ fontSize: 10, color: isDark ? 'rgba(148,163,184,0.7)' : 'rgba(100,116,139,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Trades: <Text style={{ color: isDark ? 'rgba(248,250,252,0.85)' : 'rgba(15,23,42,0.85)', fontWeight: '600', fontSize: 11 }}>{typeof row.count === 'string' ? row.count : row.count.toFixed(1).replace('.0','')}</Text></Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                 <Crosshair size={10} color={isDark ? 'rgba(100,116,139,0.8)' : 'rgba(148,163,184,0.8)'} strokeWidth={2.5} />
+                 <Text style={{ fontSize: 10, color: isDark ? 'rgba(148,163,184,0.7)' : 'rgba(100,116,139,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Win Rate: <Text style={{ color: 'rgba(16,185,129,0.85)', fontWeight: '600', fontSize: 11 }}>{row.winPct.toFixed(1)}%</Text></Text>
+              </View>
+           </View>
+           <View style={{ gap: 4, alignItems: 'flex-end' }}>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                 <Text style={{ fontSize: 10, color: isDark ? 'rgba(148,163,184,0.7)' : 'rgba(100,116,139,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Avg: <Text style={{ color: 'rgba(16,185,129,0.85)', fontWeight: '600', fontSize: 11 }}>+${row.avgGain.toFixed(2)}</Text> <Text style={{color: isDark ? 'rgba(71,85,105,0.5)' : 'rgba(203,213,225,0.5)'}}>|</Text> <Text style={{ color: 'rgba(239,68,68,0.85)', fontWeight: '600', fontSize: 11 }}>-${Math.abs(row.avgLoss).toFixed(2)}</Text></Text>
+                 <TrendingUp size={10} color={isDark ? 'rgba(100,116,139,0.8)' : 'rgba(148,163,184,0.8)'} strokeWidth={2.5} />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                 <Text style={{ fontSize: 10, color: isDark ? 'rgba(148,163,184,0.7)' : 'rgba(100,116,139,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>Max: <Text style={{ color: 'rgba(16,185,129,0.85)', fontWeight: '600', fontSize: 11 }}>+${row.biggestGain.toFixed(2)}</Text> <Text style={{color: isDark ? 'rgba(71,85,105,0.5)' : 'rgba(203,213,225,0.5)'}}>|</Text> <Text style={{ color: 'rgba(239,68,68,0.85)', fontWeight: '600', fontSize: 11 }}>-${Math.abs(row.biggestLoss).toFixed(2)}</Text></Text>
+                 <Activity size={10} color={isDark ? 'rgba(100,116,139,0.8)' : 'rgba(148,163,184,0.8)'} strokeWidth={2.5} />
+              </View>
+           </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -829,13 +940,13 @@ const CalendarView = ({ calendarDate, setCalendarDate, trades, isDark, onDayPres
         </VStack>
         <HStack space="sm">
           <TouchableOpacity 
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCalendarDate(addMonths(calendarDate, -1)); setSelectedDay(null); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCalendarDate(addMonths(calendarDate, -1)); setSelectedDay(null); swiperRef.current?.scrollTo({ x: 0, animated: false }); }}
             style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
           >
             <ChevronLeft size={18} color={isDark ? '#cbd5e1' : '#475569'} />
           </TouchableOpacity>
           <TouchableOpacity 
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCalendarDate(addMonths(calendarDate, 1)); setSelectedDay(null); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCalendarDate(addMonths(calendarDate, 1)); setSelectedDay(null); swiperRef.current?.scrollTo({ x: 0, animated: false }); }}
             style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
           >
             <ChevronRight size={18} color={isDark ? '#cbd5e1' : '#475569'} />
@@ -865,7 +976,7 @@ const CalendarView = ({ calendarDate, setCalendarDate, trades, isDark, onDayPres
           return (
             <TouchableOpacity 
               key={dKey} 
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedDay(day); }}
+              onPress={() => handleDayPress(day)}
               style={{ width: `${100/7}%`, aspectRatio: 1, padding: 2 }}
             >
               <View style={{ 
@@ -903,62 +1014,106 @@ const CalendarView = ({ calendarDate, setCalendarDate, trades, isDark, onDayPres
         })}
       </View>
 
-      {/* Daily Trade Detail List */}
-      {selectedDay && (
-        <View style={{ marginTop: 20 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-             <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', textTransform: 'uppercase', letterSpacing: 1 }}>
-                {format(selectedDay, 'MMM d, yyyy')} Details
-             </Text>
-             <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#64748b' }}>{selectedDayTrades.length} Trades</Text>
-          </View>
-          
-          {selectedDayTrades.length === 0 ? (
-            <View style={{ padding: 20, alignItems: 'center', backgroundColor: isDark ? 'rgba(30, 41, 59, 0.3)' : '#f8fafc', borderRadius: 16 }}>
-               <Text style={{ fontSize: 11, color: '#64748b', fontWeight: 'bold' }}>No trades recorded for this day.</Text>
+      {/* Dynamic Bottom Area */}
+      <View style={{ marginTop: 24, paddingBottom: 60 }}>
+        <ScrollView 
+          ref={swiperRef} horizontal pagingEnabled scrollEnabled={false}
+          showsHorizontalScrollIndicator={false}
+          contentOffset={{ x: viewWidth, y: 0 }}
+          style={{ width: viewWidth, overflow: 'hidden' }}
+        >
+          {/* PAGE 1: Daily Details (Slide in from Left) */}
+          <View style={{ width: viewWidth }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                 <TouchableOpacity onPress={() => {
+                    swiperRef.current?.scrollTo({ x: viewWidth, animated: true });
+                    setTimeout(() => setSelectedDay(null), 300);
+                    Haptics.impactAsync();
+                 }} style={{ padding: 6, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 8 }}>
+                   <ChevronLeft size={16} color={isDark ? '#cbd5e1' : '#475569'} />
+                 </TouchableOpacity>
+                 <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', textTransform: 'uppercase', letterSpacing: 1 }}>
+                    {selectedDay ? format(selectedDay, 'MMM d, yyyy') : ''} Details
+                 </Text>
+               </View>
+               <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#64748b' }}>{selectedDayTrades.length} Trades</Text>
             </View>
-          ) : (
-            <VStack space="sm">
-              {selectedDayTrades.map((t: any) => (
-                <View key={t.id} style={{ 
-                  backgroundColor: isDark ? '#1e293b' : '#ffffff', 
-                  borderRadius: 16, padding: 12, 
-                  borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' 
-                }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <VStack>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>{t.symbol}</Text>
-                      <HStack space="xs" className="items-center">
-                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>{t.type} • {t.volume || t.lots || '0.00'} Lots</Text>
-                        <TouchableOpacity 
-                            onPress={() => onOpenRecap(t)}
-                            style={{ padding: 4, backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 6 }}
-                        >
-                            <Edit3 size={10} color={isDark ? '#cbd5e1' : '#64748b'} />
-                        </TouchableOpacity>
-                      </HStack>
-                    </VStack>
-                    <VStack style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: (t.profit || 0) >= 0 ? '#10b981' : '#ef4444' }}>
-                        {(t.profit || 0) >= 0 ? '+' : ''}${(t.profit || 0).toFixed(2)}
-                      </Text>
-                      <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>{t.setup || 'Auto'}</Text>
-                    </VStack>
+            
+            {selectedDayTrades.length === 0 ? (
+              <View style={{ padding: 20, alignItems: 'center', backgroundColor: isDark ? 'rgba(30, 41, 59, 0.3)' : '#f8fafc', borderRadius: 16 }}>
+                 <Text style={{ fontSize: 11, color: '#64748b', fontWeight: 'bold' }}>No trades recorded for this day.</Text>
+              </View>
+            ) : (
+              <VStack space="sm">
+                {selectedDayTrades.map((t: any) => (
+                  <View key={t.id} style={{ 
+                    backgroundColor: isDark ? '#1e293b' : '#ffffff', 
+                    borderRadius: 16, padding: 12, 
+                    borderWidth: 1, borderColor: isDark ? '#334155' : '#e2e8f0' 
+                  }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <VStack>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>{t.symbol}</Text>
+                        <HStack space="xs" className="items-center">
+                          <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>{t.type} • {t.volume || t.lots || '0.00'} Lots</Text>
+                          <TouchableOpacity 
+                              onPress={() => onOpenRecap(t)}
+                              style={{ padding: 4, backgroundColor: isDark ? '#334155' : '#f1f5f9', borderRadius: 6 }}
+                          >
+                              <Edit3 size={10} color={isDark ? '#cbd5e1' : '#64748b'} />
+                          </TouchableOpacity>
+                        </HStack>
+                      </VStack>
+                      <VStack style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '900', color: (t.profit || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {(t.profit || 0) >= 0 ? '+' : ''}${(t.profit || 0).toFixed(2)}
+                        </Text>
+                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>{t.setup || 'Auto'}</Text>
+                      </VStack>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: isDark ? '#334155' : '#f1f5f9', marginVertical: 8 }} />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <VStack>
+                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Session: {t.session || 'Unknown'}</Text>
+                        <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Duration: {formatDuration(t.openTime || t.time, t.closeTime, t.duration)}</Text>
+                      </VStack>
+                      <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Time: {(t.time || t.openTime || "").split('T')[1]?.substring(0, 5)}</Text>
+                    </View>
                   </View>
-                  <View style={{ height: 1, backgroundColor: isDark ? '#334155' : '#f1f5f9', marginVertical: 8 }} />
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <VStack>
-                      <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Session: {t.session || 'Unknown'}</Text>
-                      <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Duration: {formatDuration(t.openTime || t.time, t.closeTime, t.duration)}</Text>
-                    </VStack>
-                    <Text style={{ fontSize: 8, fontWeight: 'bold', color: '#64748b' }}>Time: {(t.time || t.openTime || "").split('T')[1]?.substring(0, 5)}</Text>
-                  </View>
-                </View>
-              ))}
-            </VStack>
-          )}
-        </View>
-      )}
+                ))}
+              </VStack>
+            )}
+          </View>
+
+          {/* PAGE 2: Weekly Info Mobile Cards */}
+          <View style={{ width: viewWidth }}>
+             <TouchableOpacity 
+                activeOpacity={0.7} 
+                onPress={() => {
+                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                   setIsWeeklyExpanded(!isWeeklyExpanded);
+                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingHorizontal: 4 }}
+             >
+                <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Weekly Performance</Text>
+                {isWeeklyExpanded ? <ChevronUp size={14} color={isDark ? '#64748b' : '#94a3b8'} /> : <ChevronDown size={14} color={isDark ? '#64748b' : '#94a3b8'} />}
+             </TouchableOpacity>
+
+             {isWeeklyExpanded && (
+               <View>
+                 {['First Week', 'Second Week', 'Third Week', 'Fourth Week', 'Fifth Week'].map((label, idx) => 
+                    renderWeeklyCard(label, weeklyStats.rows[idx])
+                 )}
+                 <View style={{ height: 1, backgroundColor: isDark ? '#334155' : '#e2e8f0', marginVertical: 12 }} />
+                 {renderWeeklyCard('Average', weeklyStats.avgRow, true)}
+                 {renderWeeklyCard('Total', weeklyStats.totalRow, true)}
+               </View>
+             )}
+          </View>
+        </ScrollView>
+      </View>
     </View>
   );
 };
@@ -1018,6 +1173,23 @@ const HistoryScreen = React.memo(() => {
   const [selectedTradeForRecap, setSelectedTradeForRecap] = useState<any>(null);
   const [recapForm, setRecapForm] = useState({ setup: '', emotion: '', notes: '' });
   const [savingRecap, setSavingRecap] = useState(false);
+
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const slideYManual = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const slideYRecap = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const slideYShare = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    Animated.spring(slideYManual, { toValue: modalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [modalVisible]);
+
+  useEffect(() => {
+    Animated.spring(slideYRecap, { toValue: recapModalVisible ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [recapModalVisible]);
+
+  useEffect(() => {
+    Animated.spring(slideYShare, { toValue: showShareModal ? 0 : SCREEN_HEIGHT, damping: 24, stiffness: 220, useNativeDriver: true }).start();
+  }, [showShareModal]);
 
   // Recap Settings State
 
@@ -1434,9 +1606,6 @@ const HistoryScreen = React.memo(() => {
                 {startDate ? format(startDate, 'MMM d') : '...'} - {endDate ? format(endDate, 'MMM d, yyyy') : '...'}
               </Text>
             </HStack>
-            <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStartDate(null); setEndDate(null); }}>
-              <Text style={{ fontSize: 9, fontWeight: '900', color: '#ef4444', textTransform: 'uppercase', letterSpacing: 0.5 }}>Clear Filter</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -1468,7 +1637,7 @@ const HistoryScreen = React.memo(() => {
                 key={group.date}
                 group={group}
                 isDark={isDark}
-                isExp={expandedDays[group.date] ?? (idx === 0)}
+                isExp={expandedDays[group.date] ?? false}
                 date={group.date}
                 onToggleDay={toggleDay}
                 journalData={journalData}
@@ -1483,49 +1652,78 @@ const HistoryScreen = React.memo(() => {
         )}
       </VStack>
 
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-         <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#ffffff' }}>
-            {/* Modal Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e2e8f0' }}>
-               <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>{isEditing ? 'Edit Trade' : 'Manual Journal'}</Text>
-               <TouchableOpacity onPress={() => setModalVisible(false)} style={{ padding: 4, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 20 }}>
-                  <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
-               </TouchableOpacity>
+      {/* Manual Journal / Edit Trade Modal */}
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 120, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYManual }] }}
+        pointerEvents={modalVisible ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>{isEditing ? 'Edit Trade' : 'Manual Journal'}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>{isEditing ? 'UPDATE TRANSACTION' : 'RECORD NEW TRADE'}</Text>
             </View>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
-               <Text style={lblStyle}>Symbol</Text>
-               <TextInput style={inpStyle} value={form.symbol} onChangeText={t => setF("symbol", t)} placeholder="XAUUSD" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
-               
-               <Text style={lblStyle}>PnL ($)</Text>
-               <TextInput style={inpStyle} value={form.pnl} onChangeText={t => setF("pnl", t)} placeholder="150.50" keyboardType="numeric" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
-               
-               <Text style={lblStyle}>Setup</Text>
-               <TextInput style={inpStyle} value={form.setup} onChangeText={t => setF("setup", t)} placeholder="Breakout" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
-               
-               <TouchableOpacity activeOpacity={0.8} style={{ backgroundColor: '#3b82f6', paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginTop: 10 }}>
-                  <Text style={{ color: '#ffffff', fontWeight: '900', textTransform: 'uppercase' }}>Save Trade</Text>
-               </TouchableOpacity>
-            </ScrollView>
-         </View>
-      </Modal>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+             <Text style={lblStyle}>Symbol</Text>
+             <TextInput style={inpStyle} value={form.symbol} onChangeText={t => setF("symbol", t)} placeholder="XAUUSD" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
+             
+             <Text style={lblStyle}>PnL ($)</Text>
+             <TextInput style={inpStyle} value={form.pnl} onChangeText={t => setF("pnl", t)} placeholder="150.50" keyboardType="numeric" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
+             
+             <Text style={lblStyle}>Setup</Text>
+             <TextInput style={inpStyle} value={form.setup} onChangeText={t => setF("setup", t)} placeholder="Breakout" placeholderTextColor={isDark ? '#475569' : '#94a3b8'} />
+             
+             <TouchableOpacity activeOpacity={0.8} style={{ backgroundColor: '#6366f1', paddingVertical: 18, borderRadius: 24, alignItems: 'center', marginTop: 10, shadowColor: '#6366f1', shadowOpacity: 0.3, shadowRadius: 10 }}>
+                <Text style={{ color: '#ffffff', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 }}>Save Trade</Text>
+             </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Animated.View>
 
       {/* Trade Recap Modal */}
-      <Modal 
-        visible={recapModalVisible} 
-        animationType="slide" 
-        presentationStyle="pageSheet" 
-        onRequestClose={() => setRecapModalVisible(false)}
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 120, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYRecap }] }}
+        pointerEvents={recapModalVisible ? 'auto' : 'none'}
       >
-         <View style={{ flex: 1, backgroundColor: isDark ? '#020617' : '#ffffff' }}>
-            {/* Modal Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e2e8f0' }}>
-               <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a' }}>Trade Recap</Text>
-               <TouchableOpacity onPress={() => setRecapModalVisible(false)} style={{ padding: 4, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 20 }}>
-                  <X color={isDark ? '#94a3b8' : '#64748b'} size={20} />
-               </TouchableOpacity>
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setRecapModalVisible(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>Trade Recap</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>ANALYZE PERFORMANCE DATA</Text>
             </View>
+          </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
                {/* Customization Toggle */}
                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 }}>
                  <TouchableOpacity 
@@ -1751,24 +1949,41 @@ const HistoryScreen = React.memo(() => {
                   {savingRecap ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 }}>Save Trade Recap</Text>}
                </TouchableOpacity>
             </ScrollView>
-         </View>
-      </Modal>
+        </View>
+      </Animated.View>
 
       {/* ── Share PnL Card Modal ─────────────────────────────────────────── */}
-      <Modal visible={showShareModal} transparent animationType="slide" onRequestClose={() => setShowShareModal(false)}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' }}>
-          <View style={{ backgroundColor: isDark ? '#0f172a' : '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 40 }}>
-            {/* Handle */}
-            <View style={{ width: 36, height: 4, backgroundColor: isDark ? '#334155' : '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 16 }} />
-
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: isDark ? '#f8fafc' : '#0f172a' }}>Share Card</Text>
-              <TouchableOpacity onPress={() => setShowShareModal(false)}><X size={20} color={isDark ? '#64748b' : '#94a3b8'} /></TouchableOpacity>
+      <Animated.View 
+        style={{ position: 'absolute', inset: 0, zIndex: 130, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa', transform: [{ translateY: slideYShare }] }}
+        pointerEvents={showShareModal ? 'auto' : 'none'}
+      >
+        <View style={{ flex: 1, backgroundColor: isDark ? '#0b0e11' : '#f5f7fa' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+            backgroundColor: isDark ? '#13161f' : '#ffffff', borderBottomWidth: 1, borderBottomColor: isDark ? '#1e293b' : '#e8edf5',
+          }}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowShareModal(false); }} activeOpacity={0.75}
+              style={{
+                width: 38, height: 38, borderRadius: 13,
+                backgroundColor: isDark ? '#1c2030' : '#f1f5f9',
+                alignItems: 'center', justifyContent: 'center', marginRight: 14,
+              }}
+            >
+              <ArrowLeft size={20} color={isDark ? '#94a3b8' : '#64748b'} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: isDark ? '#ffffff' : '#0f172a', letterSpacing: -0.5 }}>Share Card</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? '#64748b' : '#94a3b8', letterSpacing: 0.8 }}>EXPORT YOUR PERFORMANCE</Text>
             </View>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }} directionalLockEnabled={true} nestedScrollEnabled={true}>
+            <View style={{ paddingTop: 24 }}>
 
             {/* Tab Toggle */}
-            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginHorizontal: 24, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderRadius: 14, padding: 4, marginHorizontal: 24, marginBottom: 20, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#e2e8f0' }}>
               {[
                 { key: 'period' as const, label: 'Period', icon: <BarChart2 size={13} color={shareTab === 'period' ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b'} /> },
                 { key: 'trade' as const, label: 'Single Trade', icon: <Crosshair size={13} color={shareTab === 'trade' ? (isDark ? '#f8fafc' : '#0f172a') : '#64748b'} /> },
@@ -1781,7 +1996,9 @@ const HistoryScreen = React.memo(() => {
               ))}
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 540 }}>
+            </View>
+
+            <View>
               {shareTab === 'period' ? (
                 <View style={{ paddingHorizontal: 24 }}>
                   {/* Period picker */}
@@ -1872,21 +2089,21 @@ const HistoryScreen = React.memo(() => {
                   )}
                 </View>
               )}
-            </ScrollView>
+            </View>
 
             {/* Share button (always visible outside scroll) */}
             {(shareTab === 'period' || (shareTab === 'trade' && selectedTrade)) && (
-              <View style={{ paddingHorizontal: 24 }}>
+              <View style={{ paddingHorizontal: 24, marginTop: 10, marginBottom: 40 }}>
                 <TouchableOpacity onPress={shareCard} disabled={isSharing}
-                  style={{ backgroundColor: '#6366f1', borderRadius: 16, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                  style={{ backgroundColor: '#6366f1', borderRadius: 24, paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 10, shadowColor: '#6366f1', shadowOpacity: 0.3, shadowRadius: 10 }}>
                   {isSharing ? <ActivityIndicator color="#fff" size="small" /> : <Share2 size={16} color="#fff" />}
-                  <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 }}>{isSharing ? 'Preparing...' : 'Share Card'}</Text>
+                  <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>{isSharing ? 'Preparing...' : 'Export Card'}</Text>
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </ScrollView>
         </View>
-      </Modal>
+      </Animated.View>
     </MainLayout>
   );
 });
