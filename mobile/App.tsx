@@ -108,15 +108,10 @@ const TopNavBar = React.memo(({
           extrapolate: 'clamp',
         });
 
-        // Icon slides left as pill appears so icon+label look centered together
-        const iconTranslateX = scrollX.interpolate({
-          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
-          outputRange: [0, -22, 0],
-          extrapolate: 'clamp',
-        });
-        const labelTranslateX = scrollX.interpolate({
+        // Label container maxWidth: 0 (no space) → 80 (full label visible)
+        const labelMaxWidth = scrollX.interpolate({
           inputRange: [(i - 0.45) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.45) * SCREEN_WIDTH],
-          outputRange: [6, 0, 6],
+          outputRange: [0, 80, 0],
           extrapolate: 'clamp',
         });
 
@@ -141,35 +136,40 @@ const TopNavBar = React.memo(({
                 transform: [{ scale: pillScale }, { translateY: pillTranslateY }],
               }} />
 
-              {/* Fixed-height row so pill height stays consistent */}
-              <View style={{ height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                {/* Icon — always centered, slides left when active */}
-                <Animated.View style={{
-                  transform: [{ translateX: iconTranslateX }, { scale: iconScale }],
-                }}>
-                  <View style={{ width: 16, height: 16 }}>
-                    <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
-                      <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
-                    </Animated.View>
-                    <Animated.View style={{ position: 'absolute', opacity: pillOpacity }}>
-                      <Icon size={16} strokeWidth={2.5} color="#6366f1" />
-                    </Animated.View>
-                  </View>
-                </Animated.View>
+              {/* Icon + Label in a centered flex row.
+                  Label container has maxWidth 0→80 so when collapsed it takes
+                  no space — icon stays centered. When expanded, row grows and
+                  the icon naturally shifts left. */}
+              <Animated.View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingVertical: 9,
+                paddingHorizontal: 14,
+                alignSelf: 'center',
+                transform: [{ scale: iconScale }],
+              }}>
+                {/* Dual-icon for color crossfade */}
+                <View style={{ width: 16, height: 16 }}>
+                  <Animated.View style={{ position: 'absolute', opacity: Animated.subtract(1, pillOpacity) }}>
+                    <Icon size={16} strokeWidth={2} color="rgba(255,255,255,0.70)" />
+                  </Animated.View>
+                  <Animated.View style={{ position: 'absolute', opacity: pillOpacity }}>
+                    <Icon size={16} strokeWidth={2.5} color="#6366f1" />
+                  </Animated.View>
+                </View>
 
-                {/* Label — absolutely positioned, fades in beside the shifted icon */}
-                <Animated.Text style={{
-                  position: 'absolute',
-                  left: '50%',
-                  marginLeft: 4,
-                  fontSize: 13, fontWeight: '800', letterSpacing: -0.2,
-                  color: '#6366f1',
-                  opacity: labelOpacity,
-                  transform: [{ translateX: labelTranslateX }],
-                }}>
-                  {tab.label}
-                </Animated.Text>
-              </View>
+                {/* Label: maxWidth collapses to 0 so zero layout space when inactive */}
+                <Animated.View style={{ maxWidth: labelMaxWidth, overflow: 'hidden' }}>
+                  <Animated.Text style={{
+                    fontSize: 13, fontWeight: '800', letterSpacing: -0.2,
+                    color: '#6366f1',
+                    opacity: labelOpacity,
+                  }}>
+                    {tab.label}
+                  </Animated.Text>
+                </Animated.View>
+              </Animated.View>
             </TouchableOpacity>
           </View>
         );
