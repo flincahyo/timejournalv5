@@ -1668,7 +1668,7 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
             total_pnl = sum((t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0) for t in trade_list)
             win_rate = (wins / total * 100) if total > 0 else 0
 
-            # Symbol breakdown (all symbols)
+            # Symbol breakdown (compact)
             symbols: dict = {}
             for t in trade_list:
                 sym = t.get("symbol", "N/A")
@@ -1680,42 +1680,11 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
                 if pnl > 0:
                     symbols[sym]["wins"] += 1
             sym_summary = ", ".join([
-                f"{s}: {v['count']} trades, WR={int(v['wins']/v['count']*100)}%, PnL=${v['pnl']:.2f}"
+                f"{s}: {v['count']}T WR={int(v['wins']/v['count']*100)}% PnL=${v['pnl']:.2f}"
                 for s, v in sorted(symbols.items(), key=lambda x: -x[1]["count"])
             ])
 
-            # Daily performance index (for date-specific queries)
-            daily: dict = {}
-            for t in trade_list:
-                ts = t.get("closeTime") or t.get("openTime") or t.get("time") or ""
-                if ts:
-                    try:
-                        dt_str = ts.replace(" ", "T")
-                        day = dt_str[:10]  # YYYY-MM-DD
-                        hour = dt_str[11:16] if len(dt_str) > 10 else ""
-                        pnl = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
-                        if day not in daily:
-                            daily[day] = {"trades": [], "pnl": 0.0}
-                        daily[day]["pnl"] += pnl
-                        daily[day]["trades"].append(
-                            f"{hour} {t.get('symbol','?')} {t.get('type','?')} {t.get('lots', t.get('volume',0))} lots | PnL:${pnl:.2f} | Setup:{t.get('setup','N/A')} | Session:{t.get('session','N/A')}"
-                        )
-                    except: pass
-
-            # Format ALL trading days with full detail (no cutoff)
-            sorted_days = sorted(daily.keys(), reverse=True)  # most recent first
-
-            daily_detail_lines = []
-            for day in sorted_days:
-                d = daily[day]
-                daily_detail_lines.append(f"\n[{day}] PnL: ${d['pnl']:.2f} ({len(d['trades'])} trades)")
-                # Cap per-day trade list at 20 to avoid excessive tokens, but still cover every date
-                for tl in d["trades"][:20]:
-                    daily_detail_lines.append(f"  · {tl}")
-                if len(d["trades"]) > 20:
-                    daily_detail_lines.append(f"  · ... (+{len(d['trades'])-20} more trades)")
-
-            # Session breakdown
+            # Session breakdown (compact)
             sessions: dict = {}
             for t in trade_list:
                 sess = t.get("session", "Unknown")
@@ -1724,29 +1693,177 @@ async def ai_chat(req: AIChatRequest, user: User = Depends(get_current_user), db
                     sessions[sess] = {"count": 0, "pnl": 0.0}
                 sessions[sess]["count"] += 1
                 sessions[sess]["pnl"] += pnl
-            session_summary = ", ".join([f"{s}: {v['count']} trades (${v['pnl']:.2f})" for s, v in sessions.items()])
+            session_summary = ", ".join([f"{s}: {v['count']}T ${v['pnl']:.2f}" for s, v in sessions.items()])
 
-            # Profit factor
+            # Profit factor & avg win/loss
             total_win_p = sum((t.get("profit", 0) or 0) for t in trade_list if (t.get("profit", 0) or 0) > 0)
             total_loss_p = abs(sum((t.get("profit", 0) or 0) for t in trade_list if (t.get("profit", 0) or 0) < 0))
             profit_factor = total_win_p / total_loss_p if total_loss_p > 0 else total_win_p
+            win_amts  = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) > 0]
+            loss_amts = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) < 0]
+            avg_win  = sum(win_amts)  / len(win_amts)  if win_amts  else 0
+            avg_loss = sum(loss_amts) / len(loss_amts) if loss_amts else 0
 
-            # Average win/loss
-            win_trades = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) > 0]
-            loss_trades = [abs((t.get("profit", 0) or 0)) for t in trade_list if (t.get("profit", 0) or 0) < 0]
-            avg_win = sum(win_trades) / len(win_trades) if win_trades else 0
-            avg_loss = sum(loss_trades) / len(loss_trades) if loss_trades else 0
+            # Build monthly summary + daily index in one pass
+            # monthly  -> always injected (compact, covers all history)
+            # daily_index -> full detail per day, only injected when date is queried
+            monthly: dict = {}
+            daily_index: dict = {}
+            for t in trade_list:
+                ts = t.get("closeTime") or t.get("openTime") or t.get("time") or ""
+                if not ts:
+                    continue
+                try:
+                    dt_str = ts.replace(" ", "T")
+                    day   = dt_str[:10]    # YYYY-MM-DD
+                    month = dt_str[:7]     # YYYY-MM
+                    hour  = dt_str[11:16] if len(dt_str) > 10 else ""
+                    pnl   = (t.get("profit", 0) or 0) + (t.get("swap", 0) or 0) + (t.get("commission", 0) or 0)
 
-            stats_context = f"""
-=== RINGKASAN STATISTIK (SEMUA DATA: {total} TRADES) ===
-Win Rate: {win_rate:.1f}% | Wins: {wins} | Losses: {losses}
-Total PnL: ${total_pnl:.2f} | Avg Win: ${avg_win:.2f} | Avg Loss: ${avg_loss:.2f}
-Profit Factor: {profit_factor:.2f}
-Symbols: {sym_summary}
-Sessions: {session_summary}
+                    if month not in monthly:
+                        monthly[month] = {"count": 0, "pnl": 0.0, "wins": 0}
+                    monthly[month]["count"] += 1
+                    monthly[month]["pnl"]   += pnl
+                    if pnl > 0:
+                        monthly[month]["wins"] += 1
 
-=== CATATAN HARIAN (SEMUA HARI — FULL HISTORY) ===
-{''.join(daily_detail_lines)}"""
+                    if day not in daily_index:
+                        daily_index[day] = []
+                    daily_index[day].append(
+                        f"{hour} {t.get('symbol','?')} {t.get('type','?')} "
+                        f"{t.get('lots', t.get('volume', 0))} lots | PnL:${pnl:.2f} | "
+                        f"Setup:{t.get('setup','N/A')} | Session:{t.get('session','N/A')}"
+                    )
+                except:
+                    pass
+
+            # Monthly summary lines (all history, tiny token footprint)
+            monthly_lines = []
+            for m in sorted(monthly.keys(), reverse=True):
+                v = monthly[m]
+                wr = int(v["wins"] / v["count"] * 100) if v["count"] > 0 else 0
+                monthly_lines.append(f"  {m}: {v['count']}T WR={wr}% PnL=${v['pnl']:.2f}")
+
+            # Last 7 trading days -- always injected, max 5 trades shown per day
+            recent_days_keys = sorted(daily_index.keys(), reverse=True)[:7]
+            recent_lines = []
+            for day in recent_days_keys:
+                tfd = daily_index[day]
+                try:
+                    day_pnl = sum(
+                        float(x.split("PnL:$")[1].split(" |")[0])
+                        for x in tfd if "PnL:$" in x
+                    )
+                except:
+                    day_pnl = 0.0
+                recent_lines.append(f"  [{day}] {len(tfd)} trades PnL:${day_pnl:.2f}")
+                for tl in tfd[:5]:
+                    recent_lines.append(f"    · {tl}")
+                if len(tfd) > 5:
+                    recent_lines.append(f"    · ...+{len(tfd)-5} more")
+
+            # ON-DEMAND DATE DETECTION
+            # Only the latest user message is inspected. If a date/month is mentioned,
+            # full detail for ONLY that period is appended -- nothing else changes.
+            last_user_msg = ""
+            for msg in reversed(req.messages):
+                if msg.role == "user":
+                    last_user_msg = msg.content.lower()
+                    break
+
+            import re as _re
+            month_map = {
+                "januari": "01", "january": "01", "jan": "01",
+                "februari": "02", "february": "02", "feb": "02",
+                "maret": "03", "march": "03", "mar": "03",
+                "april": "04", "apr": "04",
+                "mei": "05", "may": "05",
+                "juni": "06", "june": "06", "jun": "06",
+                "juli": "07", "july": "07", "jul": "07",
+                "agustus": "08", "august": "08", "aug": "08",
+                "september": "09", "sep": "09",
+                "oktober": "10", "october": "10", "oct": "10",
+                "november": "11", "nov": "11",
+                "desember": "12", "december": "12", "dec": "12",
+            }
+
+            now_wib_q = datetime.datetime.now(WIB)
+            queried_detail = ""
+
+            def _day_detail_block(target_day):
+                if target_day in daily_index:
+                    dt = daily_index[target_day]
+                    try:
+                        dp = sum(float(x.split("PnL:$")[1].split(" |")[0]) for x in dt if "PnL:$" in x)
+                    except:
+                        dp = 0.0
+                    body = "\n".join(f"  · {x}" for x in dt)
+                    return f"\n\n=== DATA DETAIL: {target_day} ({len(dt)} trades, PnL:${dp:.2f}) ===\n{body}"
+                return f"\n\n=== DATA: {target_day} ===\nTidak ada trade pada tanggal ini."
+
+            def _month_detail_block(year, m_num):
+                mk = f"{year}-{m_num}"
+                if mk not in monthly:
+                    return f"\n\n=== DATA: {mk} ===\nTidak ada trade bulan ini."
+                days_m = sorted([d for d in daily_index if d.startswith(mk)], reverse=True)
+                lines = [f"\n\n=== DATA DETAIL: {mk} ({monthly[mk]['count']} trades) ==="]
+                for d in days_m:
+                    dt = daily_index[d]
+                    try:
+                        dp = sum(float(x.split("PnL:$")[1].split(" |")[0]) for x in dt if "PnL:$" in x)
+                    except:
+                        dp = 0.0
+                    lines.append(f"[{d}] {len(dt)} trades PnL:${dp:.2f}")
+                    for tl in dt[:10]:
+                        lines.append(f"  · {tl}")
+                    if len(dt) > 10:
+                        lines.append(f"  · ...+{len(dt)-10} more")
+                return "\n".join(lines)
+
+            # Pattern 1: "DD bulan" e.g. "4 februari", "tanggal 20 maret"
+            for m_name, m_num in month_map.items():
+                m = _re.search(rf"\b(\d{{1,2}})\s+{m_name}\b", last_user_msg)
+                if m:
+                    day_num = m.group(1).zfill(2)
+                    year = str(now_wib_q.year)
+                    if int(m_num) > now_wib_q.month:
+                        year = str(now_wib_q.year - 1)
+                    queried_detail = _day_detail_block(f"{year}-{m_num}-{day_num}")
+                    break
+
+            # Pattern 2: ISO "YYYY-MM-DD"
+            if not queried_detail:
+                m = _re.search(r"\b(\d{4}-\d{2}-\d{2})\b", last_user_msg)
+                if m:
+                    queried_detail = _day_detail_block(m.group(1))
+
+            # Pattern 3: "bulan [YYYY]" e.g. "februari", "maret 2025"
+            if not queried_detail:
+                for m_name, m_num in month_map.items():
+                    m = _re.search(rf"\b{m_name}\s*(\d{{4}})?\b", last_user_msg)
+                    if m:
+                        yr_grp = m.group(1)
+                        year = yr_grp if yr_grp else str(now_wib_q.year)
+                        if not yr_grp and int(m_num) > now_wib_q.month:
+                            year = str(now_wib_q.year - 1)
+                        queried_detail = _month_detail_block(year, m_num)
+                        break
+
+            # Compose final compact stats_context
+            date_range = (
+                f"{sorted(daily_index.keys())[0]} s/d {sorted(daily_index.keys())[-1]}"
+                if daily_index else "N/A"
+            )
+            stats_context = (
+                f"=== STATISTIK: {total} trades total ({date_range}) ===\n"
+                f"WinRate: {win_rate:.1f}% | W:{wins} L:{losses} | "
+                f"PnL:${total_pnl:.2f} | AvgW:${avg_win:.2f} AvgL:${avg_loss:.2f} | PF:{profit_factor:.2f}\n"
+                f"Symbols: {sym_summary}\n"
+                f"Sessions: {session_summary}\n\n"
+                "=== RINGKASAN BULANAN ===\n" + "\n".join(monthly_lines) + "\n\n"
+                "=== 7 HARI TERAKHIR ===\n" + "\n".join(recent_lines)
+                + queried_detail
+            )
 
     # -- Current date/time context in WIB --
     now_wib = datetime.datetime.now(WIB)
