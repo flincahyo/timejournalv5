@@ -77,39 +77,46 @@ const TopNavBar = React.memo(({
       {TABS.map((tab, i) => {
         const { Icon } = tab;
 
-        // Pill alpha: 1 when scrollX == i*W, fades out as you swipe away
+        // ── Pill: opacity fades in steeply as you center on this tab ──────────
         const pillOpacity = scrollX.interpolate({
-          inputRange: [(i - 1) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 1) * SCREEN_WIDTH],
+          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
           outputRange: [0, 1, 0],
           extrapolate: 'clamp',
         });
-        // Icon/label color: interpolate between active (#6366f1) and inactive
+        // Pill scale: grows from 0.82 → 1 as it appears (smooth materialize)
+        const pillScale = scrollX.interpolate({
+          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
+          outputRange: [0.82, 1, 0.82],
+          extrapolate: 'clamp',
+        });
+        // Pill floats up slightly as it materializes
+        const pillTranslateY = scrollX.interpolate({
+          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
+          outputRange: [3, 0, 3],
+          extrapolate: 'clamp',
+        });
+        // Icon scale pulses from 0.88 → 1.0
         const iconScale = scrollX.interpolate({
-          inputRange: [(i - 1) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 1) * SCREEN_WIDTH],
-          outputRange: [0.85, 1, 0.85],
+          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
+          outputRange: [0.88, 1, 0.88],
           extrapolate: 'clamp',
         });
-        // Label width collapses when not active (uses opacity so layout stays)
+        // Label fades in fast only near center
         const labelOpacity = scrollX.interpolate({
-          inputRange: [(i - 0.4) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.4) * SCREEN_WIDTH],
+          inputRange: [(i - 0.35) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.35) * SCREEN_WIDTH],
           outputRange: [0, 1, 0],
-          extrapolate: 'clamp',
-        });
-        const iconColor = scrollX.interpolate({
-          inputRange: [(i - 0.5) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.5) * SCREEN_WIDTH],
-          outputRange: ['rgba(255,255,255,0.65)', '#6366f1', 'rgba(255,255,255,0.65)'],
           extrapolate: 'clamp',
         });
 
         // Icon slides left as pill appears so icon+label look centered together
         const iconTranslateX = scrollX.interpolate({
-          inputRange: [(i - 0.6) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.6) * SCREEN_WIDTH],
+          inputRange: [(i - 0.55) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.55) * SCREEN_WIDTH],
           outputRange: [0, -22, 0],
           extrapolate: 'clamp',
         });
         const labelTranslateX = scrollX.interpolate({
-          inputRange: [(i - 0.5) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.5) * SCREEN_WIDTH],
-          outputRange: [8, 0, 8],
+          inputRange: [(i - 0.45) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 0.45) * SCREEN_WIDTH],
+          outputRange: [6, 0, 6],
           extrapolate: 'clamp',
         });
 
@@ -120,7 +127,7 @@ const TopNavBar = React.memo(({
               activeOpacity={0.75}
               style={{ alignItems: 'center', justifyContent: 'center', width: 105 }}
             >
-              {/* Animated pill background */}
+              {/* Animated pill background — scales + floats up as it materializes */}
               <Animated.View style={{
                 position: 'absolute',
                 inset: 0,
@@ -131,6 +138,7 @@ const TopNavBar = React.memo(({
                 shadowOpacity: 0.10,
                 shadowRadius: 8,
                 elevation: 3,
+                transform: [{ scale: pillScale }, { translateY: pillTranslateY }],
               }} />
 
               {/* Fixed-height row so pill height stays consistent */}
