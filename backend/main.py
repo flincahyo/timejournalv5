@@ -2164,6 +2164,7 @@ Format Markdown. Bold setiap poin utama. Struktur:
 
 
 @app.get("/api/news")
+@app.get("/api/calendar/events")
 async def get_news():
     """Returns the cached economic news calendar."""
     return _news_cache
@@ -2422,10 +2423,13 @@ async def _update_news_cache():
 
 async def _news_evaluator_loop():
     """Runs every 1 minute. Evaluates news events against user settings and pushes notifications."""
+    print("📰 News evaluator loop starting (immediate fetch)...")
+    await _update_news_cache() # Fill cache immediately
+    
     await asyncio.sleep(15)  # Wait for DB init
     print("📰 News evaluator loop running")
     
-    last_fetch = 0
+    last_fetch = time.time()
     
     while True:
         try:

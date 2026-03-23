@@ -528,7 +528,7 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
     (async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const res   = await fetch(`${API_URL}/calendar/events?limit=20`, {
+        const res   = await fetch(`${API_URL}/news`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
