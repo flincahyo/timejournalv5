@@ -616,23 +616,36 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
   );
 }
 
-// ── Alerts Tab ─────────────────────────────────────────────────────────────────
-const ALERT_ICON_MAP: Record<string, { Icon: any; color: string }> = {
-  connection: { Icon: Link2,     color: '#6366f1' },
-  price:      { Icon: Zap,       color: '#f59e0b' },
-  sync:       { Icon: RefreshCw, color: '#10b981' },
-  system:     { Icon: Settings,  color: '#64748b' },
-  mt5:        { Icon: Radio,     color: '#8b5cf6' },
-  default:    { Icon: Bell,      color: '#64748b' },
+// Alert type → icon + color (covers price, candle/momentum, news, connection, system)
+const ALERT_ICON_MAP: Record<string, { Icon: any; color: string; label: string }> = {
+  price:      { Icon: Zap,       color: '#f59e0b', label: 'Price Alert'    },
+  candle:     { Icon: BarChart2, color: '#6366f1', label: 'Momentum'       },
+  connection: { Icon: Link2,     color: '#6366f1', label: 'Connection'     },
+  sync:       { Icon: RefreshCw, color: '#10b981', label: 'Sync'           },
+  system:     { Icon: Settings,  color: '#64748b', label: 'System'         },
+  mt5:        { Icon: Radio,     color: '#8b5cf6', label: 'MT5'            },
+  default:    { Icon: Bell,      color: '#64748b', label: 'Alert'          },
 };
 
 function AlertsTab({ isDark }: { isDark: boolean }) {
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts,  setAlerts]  = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AsyncStorage.getItem('notif_alerts').then(raw => {
-      if (raw) setAlerts((JSON.parse(raw) as any[]).slice(0, MAX_ITEMS));
-    });
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const res = await fetch(`${API_URL}/alerts/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // data.history = [{id, data:{title,body,symbol,type,alert_data}, triggeredAt}]
+          setAlerts((data.history || []).slice(0, 10));
+        }
+      } catch (_) {}
+      finally { setLoading(false); }
+    })();
   }, []);
 
   const t  = isDark ? C.text.dark    : C.text.light;
@@ -641,6 +654,17 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
   const bg = isDark ? C.surface.dark : C.surface.light;
   const b  = isDark ? C.border.dark  : C.border.light;
 
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          <Bell size={28} color={t3} />
+        </View>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: t2 }}>Loading alerts...</Text>
+      </View>
+    );
+  }
+
   if (alerts.length === 0) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
@@ -648,12 +672,19 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
           <Bell size={28} color={t3} />
         </View>
         <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No alerts yet</Text>
-        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Connection changes, price alerts, and system messages will appear here</Text>
+        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Price alerts and momentum candle alerts will appear here</Text>
       </View>
     );
   }
 
-  const items  = alerts.map(a => ({ ...a, dateStr: a.time || a.date || '' }));
+  const items  = alerts.map(a => ({
+    ...a,
+    dateStr: a.triggeredAt || '',
+    title:   a.data?.title || 'Alert',
+    body:    a.data?.body || '',
+    type:    a.data?.type || 'default',
+    symbol:  a.data?.symbol || '',
+  }));
   const groups = groupByDate(items);
 
   return (
@@ -668,28 +699,34 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
               const typeKey = (alert.type || 'default').toLowerCase();
               const cfg     = ALERT_ICON_MAP[typeKey] || ALERT_ICON_MAP.default;
               const { Icon } = cfg;
-              const time    = formatTime(alert.time || alert.date || '');
+              const time    = formatTime(alert.triggeredAt || '');
               return (
                 <View key={i} style={{
                   flexDirection: 'row', alignItems: 'flex-start',
                   paddingHorizontal: 16, paddingVertical: 14,
                   borderBottomWidth: i < group.items.length - 1 ? 1 : 0, borderBottomColor: b,
                 }}>
-                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${cfg.color}12`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${cfg.color}18`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
                     <Icon size={18} color={cfg.color} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 13, fontWeight: '800', color: t, flex: 1, marginRight: 8 }} numberOfLines={1}>
-                        {alert.title || 'Alert'}
+                        {alert.title}
                       </Text>
                       <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{time}</Text>
                     </View>
-                    {alert.message && (
+                    {alert.body ? (
                       <Text style={{ fontSize: 11, fontWeight: '500', color: t2, marginTop: 3, lineHeight: 16 }} numberOfLines={2}>
-                        {alert.message}
+                        {alert.body}
                       </Text>
-                    )}
+                    ) : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <View style={{ backgroundColor: `${cfg.color}18`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: cfg.color }}>{cfg.label.toUpperCase()}</Text>
+                      </View>
+                      {alert.symbol ? <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{alert.symbol}</Text> : null}
+                    </View>
                   </View>
                 </View>
               );

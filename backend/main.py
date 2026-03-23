@@ -78,6 +78,9 @@ _ws_clients: Dict[str, List[WebSocket]] = {}
 _price_cache: Dict[str, float] = {}  # {"XAUUSD": 2650.50, ...}
 _candle_cache: Dict[str, list] = {}  # {"XAUUSD_M1": [{time, open, high, low, close}, ...], ...}
 _alert_notified: Dict[str, float] = {}  # {"alert_id": last_notified_timestamp}
+# Candle-boundary push limiter: max MAX_NOTIF_PER_CANDLE pushes per candle per alert
+MAX_NOTIF_PER_CANDLE = 2
+_candle_notif_count: Dict[str, tuple] = {}  # {"alert_id": (candle_open_key, count)}
 _watching_symbols: Dict[str, float] = {}  # {"SYMBOL": expiry_timestamp}
 
 # ── News cache (updated hourly) ───────────────────────────────────────────────
@@ -1474,6 +1477,32 @@ async def create_alert(req: AlertRequest, user: User = Depends(get_current_user)
     return {"ok": True, "id": alert_id, "alert": alert_data}
 
 
+# ── History routes MUST be defined BEFORE /{alert_id} to avoid path collision ──
+@app.get("/api/alerts/history")
+async def get_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(AlertHistory)
+        .where(AlertHistory.user_id == user.id)
+        .order_by(AlertHistory.triggered_at.desc())
+        .limit(10)
+    )
+    history = []
+    for h in result.scalars().all():
+        history.append({
+            "id": h.id,
+            "data": h.data,
+            "triggeredAt": h.triggered_at.isoformat()
+        })
+    return {"history": history}
+
+
+@app.delete("/api/alerts/history")
+async def clear_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(AlertHistory).where(AlertHistory.user_id == user.id))
+    await db.commit()
+    return {"ok": True}
+
+
 class AlertUpdateRequest(BaseModel):
     partial: dict
 
@@ -1491,31 +1520,6 @@ async def update_alert(alert_id: str, req: AlertUpdateRequest, user: User = Depe
 @app.delete("/api/alerts/{alert_id}")
 async def delete_alert(alert_id: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await db.execute(delete(Alert).where(Alert.id == alert_id, Alert.user_id == user.id))
-    await db.commit()
-    return {"ok": True}
-
-
-@app.get("/api/alerts/history")
-async def get_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(AlertHistory)
-        .where(AlertHistory.user_id == user.id)
-        .order_by(AlertHistory.triggered_at.desc())
-        .limit(100)
-    )
-    history = []
-    for h in result.scalars().all():
-        history.append({
-            "id": h.id,
-            "data": h.data,
-            "triggeredAt": h.triggered_at.isoformat()
-        })
-    return {"history": history}
-
-
-@app.delete("/api/alerts/history")
-async def clear_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await db.execute(delete(AlertHistory).where(AlertHistory.user_id == user.id))
     await db.commit()
     return {"ok": True}
 
@@ -2301,6 +2305,36 @@ async def _alert_evaluator_loop():
                                     
                                     if body_pips >= min_body and wick_pct <= max_wick:
                                         direction = "Bullish" if close_val > open_val else "Bearish"
+
+                                        # ── Candle-boundary 2x limit ────────────────────
+                                        # Compute current candle open time from wall clock
+                                        TF_SECONDS = {
+                                            "M1": 60, "M2": 120, "M3": 180, "M4": 240,
+                                            "M5": 300, "M10": 600, "M15": 900, "M30": 1800,
+                                            "H1": 3600, "H4": 14400, "H12": 43200,
+                                            "D1": 86400, "W1": 604800,
+                                        }
+                                        tf_sec = TF_SECONDS.get(tf.upper(), 60)
+                                        # Try to use candle open_time if available
+                                        candle_open_ts = c.get("time") or c.get("open_time") or c.get("openTime")
+                                        if candle_open_ts:
+                                            candle_key = str(candle_open_ts)[:16]  # YYYY-MM-DDTHH:MM
+                                        else:
+                                            # Fallback: floor current epoch to TF boundary
+                                            epoch = int(time.time())
+                                            floored = (epoch // tf_sec) * tf_sec
+                                            candle_key = datetime.datetime.utcfromtimestamp(floored).strftime("%Y-%m-%dT%H:%M")
+
+                                        prev_key, prev_count = _candle_notif_count.get(alert_id, (None, 0))
+                                        if prev_key == candle_key:
+                                            if prev_count >= MAX_NOTIF_PER_CANDLE:
+                                                continue  # Already sent max notifs this candle
+                                            new_count = prev_count + 1
+                                        else:
+                                            new_count = 1  # New candle, reset counter
+                                        _candle_notif_count[alert_id] = (candle_key, new_count)
+                                        # ───────────────────────────────────────────────
+
                                         triggered = True
                                         title = f"🚨 {symbol} {tf} Momentum!"
                                         body = f"{direction} candle with {body_pips:.1f} pips body and {wick_pct:.0f}% wick!"
@@ -2339,8 +2373,8 @@ async def _alert_evaluator_loop():
                                 )
                                 db.add(history_entry)
                                 
-                                # Enforce history limit
-                                limit = (user.settings.terminal_layout or {}).get("alertHistoryLimit", 50) if user.settings else 50
+                                # Enforce history limit (10 max per user)
+                                limit = 10
                                 await db.flush()
                                 
                                 # Delete old entries if exceeding limit
