@@ -41,8 +41,10 @@ function formatTime(ds: string): string {
   if (!ds) return '';
   try {
     let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
-    // If no timezone suffix, treat as UTC (backend sends naive UTC)
-    if (n && !n.includes('Z') && !n.includes('+')) {
+    // If no timezone suffix, treat as UTC (backend sends naive UTC). 
+    // Check for suffix 'Z', '+' offset, or '-' offset after the date part (index 10).
+    const hasTZ = n.includes('Z') || n.includes('+', 10) || (n.includes('-', 11)); 
+    if (n && !hasTZ) {
       n += 'Z';
     }
     return new Date(n).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -53,8 +55,9 @@ function formatDate(ds: string): string {
   if (!ds) return '';
   try {
     let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
-    // If no timezone suffix, treat as UTC (backend sends naive UTC)
-    if (n && !n.includes('Z') && !n.includes('+')) {
+    // If no timezone suffix, treat as UTC (backend sends naive UTC).
+    const hasTZ = n.includes('Z') || n.includes('+', 10) || (n.includes('-', 11)); 
+    if (n && !hasTZ) {
       n += 'Z';
     }
     const d = new Date(n);
