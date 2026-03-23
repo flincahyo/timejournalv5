@@ -2210,6 +2210,10 @@ async def update_audio_settings(new_settings: dict, user: User = Depends(get_cur
 
 
 # ── Alert Evaluator Background Loop ──────────────────────────────────────────
+def _strip_emoji(text: str) -> str:
+    """Remove emoji/non-ASCII chars so INSERT into SQL_ASCII DB won't fail."""
+    return text.encode('ascii', 'ignore').decode('ascii').strip()
+
 async def _alert_evaluator_loop():
     """Runs every 5 seconds. Evaluates alerts against cached prices and sends push notifications."""
     COOLDOWN_SECONDS = 60  # Don't re-notify same alert within 60s
@@ -2363,8 +2367,8 @@ async def _alert_evaluator_loop():
                                     user_id=user.id,
                                     alert_id=alert_id,
                                     data={
-                                        "title": title,
-                                        "body": body,
+                                        "title": _strip_emoji(title),
+                                        "body": _strip_emoji(body),
                                         "symbol": symbol,
                                         "type": alert_type,
                                         "alert_data": alert # snapshot
