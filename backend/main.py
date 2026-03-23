@@ -1492,7 +1492,7 @@ async def get_alert_history(user: User = Depends(get_current_user), db: AsyncSes
         history.append({
             "id": h.id,
             "data": h.data,
-            "triggeredAt": h.triggered_at.isoformat()
+            "triggeredAt": f"{h.triggered_at.isoformat()}Z"
         })
     return {"history": history}
 

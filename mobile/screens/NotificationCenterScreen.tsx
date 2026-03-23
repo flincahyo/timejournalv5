@@ -40,7 +40,11 @@ const EMOTION_OPTIONS = ['Confident', 'Greedy', 'Fear', 'Neutral', 'Excited', 'F
 function formatTime(ds: string): string {
   if (!ds) return '';
   try {
-    const n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
+    let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
+    // If no timezone suffix, treat as UTC (backend sends naive UTC)
+    if (n && !n.includes('Z') && !n.includes('+')) {
+      n += 'Z';
+    }
     return new Date(n).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   } catch { return ''; }
 }
@@ -48,7 +52,11 @@ function formatTime(ds: string): string {
 function formatDate(ds: string): string {
   if (!ds) return '';
   try {
-    const n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
+    let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
+    // If no timezone suffix, treat as UTC (backend sends naive UTC)
+    if (n && !n.includes('Z') && !n.includes('+')) {
+      n += 'Z';
+    }
     const d = new Date(n);
     const today = new Date();
     const yest  = new Date(); yest.setDate(yest.getDate() - 1);
