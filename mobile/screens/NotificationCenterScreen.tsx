@@ -531,12 +531,13 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
     (async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const res   = await fetch(`${API_URL}/news`, {
+        const res   = await fetch(`${API_URL}/alerts/history`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
-          setNews((data.events || data.data || data || []).slice(0, MAX_ITEMS));
+          const newsHistory = (data.history || []).filter((h: any) => h.data?.type === 'news');
+          setNews(newsHistory.slice(0, MAX_ITEMS));
         }
       } catch (_) {}
       finally { setLoading(false); }
@@ -572,13 +573,19 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
         <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
           <Newspaper size={28} color={t3} />
         </View>
-        <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No news recap</Text>
-        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Economic calendar events will appear here</Text>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No news alerts yet</Text>
+        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Triggered economic news notifications will appear here</Text>
       </View>
     );
   }
 
-  const items  = news.map((n: any) => ({ ...n, dateStr: n.date || n.event_time || n.time || '' }));
+  const items  = news.map((h: any) => ({
+    ...h,
+    dateStr: h.triggeredAt || '',
+    title:   h.data?.title || 'News Alert',
+    body:    h.data?.body || '',
+    symbol:  h.data?.symbol || '',
+  }));
   const groups = groupByDate(items);
 
   return (
@@ -590,31 +597,31 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
           </Text>
           <View style={{ backgroundColor: bg, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: b }}>
             {group.items.map((item: any, i: number) => {
-              const impact = (item.impact || item.type || 'low').toLowerCase();
-              const cfg    = IMPACT[impact] || IMPACT.low;
-              const { Icon } = cfg;
-              const time   = formatTime(item.date || item.event_time || item.time || '');
+              const time = formatTime(item.triggeredAt || '');
               return (
                 <View key={i} style={{
                   flexDirection: 'row', alignItems: 'flex-start',
                   paddingHorizontal: 16, paddingVertical: 14,
                   borderBottomWidth: i < group.items.length - 1 ? 1 : 0, borderBottomColor: b,
                 }}>
-                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${cfg.color}12`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <Icon size={18} color={cfg.color} strokeWidth={2} />
+                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${C.amber}18`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Newspaper size={18} color={C.amber} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 13, fontWeight: '800', color: t, flex: 1, marginRight: 8 }} numberOfLines={1}>
-                        {item.title || item.name || item.event || 'Economic Event'}
+                        {item.title}
                       </Text>
                       <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{time}</Text>
                     </View>
+                    <Text style={{ fontSize: 11, fontWeight: '500', color: t2, marginTop: 3, lineHeight: 16 }} numberOfLines={2}>
+                      {item.body}
+                    </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                      <View style={{ backgroundColor: `${cfg.color}12`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
-                        <Text style={{ fontSize: 9, fontWeight: '800', color: cfg.color }}>{impact.toUpperCase()} IMPACT</Text>
+                      <View style={{ backgroundColor: `${C.amber}18`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: C.amber }}>NEWS ALERT</Text>
                       </View>
-                      {item.currency && <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{item.currency}</Text>}
+                      {item.symbol ? <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{item.symbol}</Text> : null}
                     </View>
                   </View>
                 </View>
@@ -653,7 +660,8 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
         if (res.ok) {
           const data = await res.json();
           // data.history = [{id, data:{title,body,symbol,type,alert_data}, triggeredAt}]
-          setAlerts((data.history || []).slice(0, 10));
+          const filtered = (data.history || []).filter((h: any) => h.data?.type !== 'news');
+          setAlerts(filtered.slice(0, 10));
         }
       } catch (_) {}
       finally { setLoading(false); }
@@ -684,7 +692,7 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
           <Bell size={28} color={t3} />
         </View>
         <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No alerts yet</Text>
-        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Price alerts, candle momentum, and economic news alerts will appear here</Text>
+        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Price alerts and candle momentum alerts will appear here</Text>
       </View>
     );
   }
