@@ -517,8 +517,9 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         user_id=user.id,
         theme="light",
         news_settings={
-            "enabled": False, "currencies": ["USD"],
-            "impacts": ["High"], "minutesBefore": 5
+            "enabled": True, "currencies": ["USD"],
+            "impacts": ["High"], "minutesBefore": 5,
+            "autoHighImpact": False, "selectedEvents": [], "sound": "default"
         },
         recap_settings={
             "enabled": True,
@@ -1614,8 +1615,10 @@ async def update_settings(req: SettingsUpdateRequest, user: User = Depends(get_c
         s.theme = req.theme
     if req.newsSettings is not None:
         s.news_settings = req.newsSettings
+        flag_modified(s, "news_settings")
     if req.terminalLayout is not None:
         s.terminal_layout = req.terminalLayout
+        flag_modified(s, "terminal_layout")
     if req.expo_push_token is not None:
         s.expo_push_token = req.expo_push_token
     s.updated_at = datetime.datetime.utcnow()
@@ -2170,9 +2173,14 @@ async def get_news():
 async def get_news_settings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     settings = result.scalar_one_or_none()
-    if not settings:
-        return {"enabled": False, "minutesBefore": 5, "sound": "default", "selectedEvents": [], "autoHighImpact": False}
-    return settings.news_settings
+    # Return full structure even if partially missing in DB
+    defaults = {"enabled": True, "minutesBefore": 5, "sound": "default", "selectedEvents": [], "autoHighImpact": False}
+    if not settings or not settings.news_settings:
+        return defaults
+    
+    # Merge DB values into defaults to ensure all keys exist
+    merged = {**defaults, **settings.news_settings}
+    return merged
 
 
 @app.put("/api/auth/news-settings")
@@ -2501,6 +2509,29 @@ async def _news_evaluator_loop():
                                         {"type": "news", "eventKey": ev_key},
                                         sound=news_sound
                                     )
+
+                                    # Save news alert to history so it shows in Notification Center
+                                    try:
+                                        history_entry = AlertHistory(
+                                            id=str(uuid.uuid4()),
+                                            user_id=user.id,
+                                            alert_id=f"news_{ev_key[:20]}",
+                                            data={
+                                                "title": f"{impact_emoji} {country} News Soon",
+                                                "body": f"{title} rilis dalam {minutes_before} menit.",
+                                                "symbol": country,
+                                                "type": "news",
+                                                "event_key": ev_key
+                                            },
+                                            triggered_at=datetime.datetime.utcnow()
+                                        )
+                                        db.add(history_entry)
+                                        # No need to commit here, it will commit at the end of user loop if we wanted, 
+                                        # but better to commit promptly for news
+                                        await db.commit() 
+                                    except Exception as hist_e:
+                                        print(f"⚠ Failed to save news history: {hist_e}")
+                                        await db.rollback()
                                     
         except asyncio.CancelledError:
             break

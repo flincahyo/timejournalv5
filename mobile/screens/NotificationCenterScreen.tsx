@@ -623,6 +623,7 @@ const ALERT_ICON_MAP: Record<string, { Icon: any; color: string; label: string }
   connection: { Icon: Link2,     color: '#6366f1', label: 'Connection'     },
   sync:       { Icon: RefreshCw, color: '#10b981', label: 'Sync'           },
   system:     { Icon: Settings,  color: '#64748b', label: 'System'         },
+  news:       { Icon: Newspaper, color: '#f59e0b', label: 'News Alert'    },
   mt5:        { Icon: Radio,     color: '#8b5cf6', label: 'MT5'            },
   default:    { Icon: Bell,      color: '#64748b', label: 'Alert'          },
 };
@@ -672,7 +673,7 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
           <Bell size={28} color={t3} />
         </View>
         <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No alerts yet</Text>
-        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Price alerts and momentum candle alerts will appear here</Text>
+        <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Price alerts, candle momentum, and economic news alerts will appear here</Text>
       </View>
     );
   }
