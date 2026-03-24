@@ -743,44 +743,109 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
 
           {/* ── Session & Hourly Overview ──────────────────────────────────── */}
           {trades.length > 0 && (
-            <>
-              <View style={{ backgroundColor: isDark ? C.surface.dark : C.surface.light, borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: isDark ? C.border.dark : C.border.light }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? C.text.dark : C.text.light, marginBottom: 14 }}>Session Overview</Text>
-                {['London', 'New York', 'Overlap LN+NY', 'Tokyo', 'Sydney'].map((session) => {
-                  // Match stored session names (case-insensitive contains)
-                  const count = trades.filter((t: any) => {
-                    const s = (t.session || '').toLowerCase();
-                    if (session === 'Overlap LN+NY') return s.includes('overlap') || s === 'overlap ln+ny';
-                    return s === session.toLowerCase();
-                  }).length;
-                  const pct = trades.length > 0 ? Math.round((count / trades.length) * 100) : 0;
-                  const colors: Record<string, string> = {
-                    'London': '#3b82f6',
-                    'New York': '#f59e0b',
-                    'Overlap LN+NY': '#8b5cf6',
-                    'Tokyo': '#10b981',
-                    'Sydney': '#f97316',
-                  };
-                  return (
-                    <View key={session} style={{ marginBottom: 12 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors[session] }} />
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light }}>{session}</Text>
-                        </View>
-                        <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? C.text.dark : C.text.light }}>{count} · {pct}%</Text>
-                      </View>
-                      <View style={{ height: 4, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, borderRadius: 2, overflow: 'hidden' }}>
-                        <View style={{ height: '100%', width: `${pct}%`, backgroundColor: colors[session], borderRadius: 2 }} />
+          <>
+
+              {/* ── Session Overview (swipeable) ─────────────────────────────── */}
+              {(() => {
+                const SESSION_DATA = [
+                  { name: 'London',       color: '#3b82f6', wib: '15:00–02:00', utc: '08:00–17:00', local: '08:00–17:00 BST/GMT' },
+                  { name: 'New York',     color: '#f59e0b', wib: '20:30–00:00', utc: '12:30–17:00', local: '09:30–17:00 EDT/EST' },
+                  { name: 'Overlap LN+NY',color: '#8b5cf6', wib: '20:30–00:00', utc: '13:30–17:00', local: 'LN + NY open simultaneously' },
+                  { name: 'Pre-London',   color: '#06b6d4', wib: '14:00–15:00', utc: '07:00–08:00', local: '07:00–08:00 Europe/London' },
+                  { name: 'Tokyo',        color: '#10b981', wib: '16:00–01:00', utc: '09:00–18:00', local: '09:00–18:00 JST' },
+                  { name: 'Sydney',       color: '#f97316', wib: '04:00–13:00', utc: '21:00–06:00', local: '07:00–16:00 AEDT/AEST' },
+                ];
+
+                const [cardPage, setCardPage] = React.useState(0);
+                const cardW = SCREEN_WIDTH - 40;
+                const scrollRef = React.useRef<any>(null);
+
+                return (
+                  <View style={{ marginBottom: 16 }}>
+                    {/* Page dots + label */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? C.text.dark : C.text.light }}>
+                        {cardPage === 0 ? 'Session Overview' : 'Market Map'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
+                        {[0, 1].map(i => (
+                          <View key={i} style={{
+                            width: cardPage === i ? 16 : 6, height: 6, borderRadius: 3,
+                            backgroundColor: cardPage === i ? C.accent : (isDark ? C.border.dark : C.border.light),
+                          }} />
+                        ))}
                       </View>
                     </View>
-                  );
-                })}
-              </View>
+
+                    <ScrollView
+                      ref={scrollRef}
+                      horizontal pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      onMomentumScrollEnd={e => {
+                        const page = Math.round(e.nativeEvent.contentOffset.x / cardW);
+                        setCardPage(page);
+                      }}
+                      decelerationRate="fast"
+                      snapToInterval={cardW}
+                      snapToAlignment="start"
+                    >
+                      {/* ── Page 1: Session Stats ─────────────────────────── */}
+                      <View style={{ width: cardW, backgroundColor: isDark ? C.surface.dark : C.surface.light, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: isDark ? C.border.dark : C.border.light }}>
+                        {SESSION_DATA.filter(s => s.name !== 'Overlap LN+NY').map((session, idx, arr) => {
+                          const count = trades.filter((t: any) => {
+                            const s = (t.session || '').toLowerCase();
+                            return s === session.name.toLowerCase() || (session.name === 'Overlap LN+NY' && (s.includes('overlap') || s === 'overlap ln+ny'));
+                          }).length;
+                          const pct = trades.length > 0 ? Math.round((count / trades.length) * 100) : 0;
+                          return (
+                            <View key={session.name} style={{ marginBottom: idx < arr.length - 1 ? 12 : 0 }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: session.color }} />
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? C.text2.dark : C.text2.light }}>{session.name}</Text>
+                                  <Text style={{ fontSize: 9, fontWeight: '600', color: isDark ? C.text3.dark : C.text3.light }}>{session.wib} WIB</Text>
+                                </View>
+                                <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? C.text.dark : C.text.light }}>{count} · {pct}%</Text>
+                              </View>
+                              <View style={{ height: 4, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, borderRadius: 2, overflow: 'hidden' }}>
+                                <View style={{ height: '100%', width: `${pct}%`, backgroundColor: session.color, borderRadius: 2 }} />
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+
+                      {/* ── Page 2: Market Map Table ──────────────────────── */}
+                      <View style={{ width: cardW, backgroundColor: isDark ? C.surface.dark : C.surface.light, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: isDark ? C.border.dark : C.border.light }}>
+                        {/* Header row */}
+                        <View style={{ flexDirection: 'row', marginBottom: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: isDark ? C.border.dark : C.border.light }}>
+                          <Text style={{ flex: 1.2, fontSize: 8, fontWeight: '900', color: isDark ? C.text3.dark : C.text3.light, letterSpacing: 0.8 }}>SESSION</Text>
+                          <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: isDark ? C.text3.dark : C.text3.light, letterSpacing: 0.8, textAlign: 'center' }}>WIB</Text>
+                          <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: isDark ? C.text3.dark : C.text3.light, letterSpacing: 0.8, textAlign: 'right' }}>LOCAL</Text>
+                        </View>
+                        {SESSION_DATA.map((session, idx) => (
+                          <View key={session.name} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: idx < SESSION_DATA.length - 1 ? 1 : 0, borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }}>
+                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: session.color }} />
+                              <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? C.text.dark : C.text.light }}>{session.name}</Text>
+                            </View>
+                            <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: isDark ? C.text2.dark : C.text2.light, textAlign: 'center' }}>{session.wib}</Text>
+                            <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: isDark ? C.text3.dark : C.text3.light, textAlign: 'right' }} numberOfLines={1}>{session.utc} UTC</Text>
+                          </View>
+                        ))}
+                        <Text style={{ fontSize: 8, fontWeight: '600', color: isDark ? C.text3.dark : C.text3.light, marginTop: 10, textAlign: 'center' }}>
+                          * DST-aware · London/NY auto-adjust Mar/Nov
+                        </Text>
+                      </View>
+                    </ScrollView>
+                  </View>
+                );
+              })()}
 
               {/* ── Hourly Performance ──────────────────────────────────────── */}
               <HourlyPerformance trades={trades} isDark={isDark} />
             </>
+
           )}
         </View>
       </ScrollView>

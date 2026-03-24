@@ -168,24 +168,32 @@ async def sync_trade_to_journal(user_id: str, trade_data: dict, db: AsyncSession
 
 
 def detect_session(dt_val):
-    """Detects Forex trading session based on timestamp."""
+    """
+    Detects Forex trading session based on timestamp.
+    DST-aware: uses actual exchange local times via pytz so London/NY
+    automatically shift when clocks change (March/November).
+    
+    Sessions (local exchange time → UTC equivalent varies by DST):
+      Sydney:      07:00-16:00 AEST/AEDT
+      Tokyo:       09:00-18:00 JST  (no DST)
+      Pre-London:  07:00-08:00 Europe/London (Frankfurt pre-market)
+      London:      08:00-17:00 Europe/London
+      New York:    09:30-17:00 America/New_York
+      Overlap LN+NY: both open simultaneously
+    """
     if not dt_val:
         return "Unknown"
     try:
+        # ── Normalise input to UTC-aware datetime ─────────────────────────
         dt_utc = None
-        # Handle WIB string or ISO string
         if isinstance(dt_val, str):
-            dt_str = dt_val.strip()
-            # Replace common non-ISO separators
-            dt_str = dt_str.replace(" ", "T").replace("/", "-").replace(".", "-")
-            
+            dt_str = dt_val.strip().replace(" ", "T").replace("/", "-").replace(".", "-")
             if dt_str.endswith("Z"):
                 dt_utc = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00")).astimezone(pytz.UTC)
-            elif "+" in dt_str or ("-" in dt_str[10:] and len(dt_str) > 10): # Has offset
+            elif "+" in dt_str or ("-" in dt_str[10:] and len(dt_str) > 10):
                 dt_utc = datetime.datetime.fromisoformat(dt_str).astimezone(pytz.UTC)
             elif len(dt_str) >= 19:
                 dt_naive = datetime.datetime.fromisoformat(dt_str[:19])
-                # Default to WIB if no offset (worker convention), otherwise fallback to UTC
                 dt_utc = pytz.timezone("Asia/Jakarta").localize(dt_naive).astimezone(pytz.UTC)
             else:
                 dt_utc = datetime.datetime.fromisoformat(dt_str).astimezone(pytz.UTC)
@@ -199,25 +207,44 @@ def detect_session(dt_val):
         else:
             return "Unknown"
 
-        # Session Hours based on user screenshot (WIB)
-        # Convert UTC hour to WIB hour (Jakarta Time)
-        wib_h = (dt_utc.hour + 7) % 24
-        
-        l_open = 14 <= wib_h < 24
-        ny_open = (19 <= wib_h < 24) or (0 <= wib_h < 5)
-        tk_open = 2 <= wib_h < 9
-        s_open = 4 <= wib_h < 13
-        
-        if l_open and ny_open: return "Overlap LN+NY"
-        if l_open: return "London"
-        if ny_open: return "New York"
-        if tk_open: return "Tokyo"
-        if s_open: return "Sydney"
-        
+        # ── DST-aware session check using local exchange times ────────────
+        tz_london  = pytz.timezone("Europe/London")       # BST/GMT auto-adjusts
+        tz_ny      = pytz.timezone("America/New_York")    # EDT/EST auto-adjusts
+        tz_sydney  = pytz.timezone("Australia/Sydney")    # AEDT/AEST auto-adjusts
+        tz_tokyo   = pytz.timezone("Asia/Tokyo")           # JST, no DST
+
+        dt_london = dt_utc.astimezone(tz_london)
+        dt_ny     = dt_utc.astimezone(tz_ny)
+        dt_sydney = dt_utc.astimezone(tz_sydney)
+        dt_tokyo  = dt_utc.astimezone(tz_tokyo)
+
+        # Hours as decimal for easy range checks
+        def hm(dt):
+            return dt.hour + dt.minute / 60.0
+
+        lh  = hm(dt_london)
+        nyh = hm(dt_ny)
+        syh = hm(dt_sydney)
+        tkh = hm(dt_tokyo)
+
+        # Session open/close in local exchange time
+        london_open    = 8.0   <= lh  < 17.0   # 08:00 - 17:00 London local
+        pre_london     = 7.0   <= lh  < 8.0    # 07:00 - 08:00 London (Frankfurt/pre-market)
+        ny_open        = 9.5   <= nyh < 17.0   # 09:30 - 17:00 NY local
+        sydney_open    = 7.0   <= syh < 16.0   # 07:00 - 16:00 Sydney local
+        tokyo_open     = 9.0   <= tkh < 18.0   # 09:00 - 18:00 Tokyo local
+
+        if london_open and ny_open:  return "Overlap LN+NY"
+        if london_open:              return "London"
+        if ny_open:                  return "New York"
+        if pre_london:               return "Pre-London"
+        if tokyo_open:               return "Tokyo"
+        if sydney_open:              return "Sydney"
+
         return "Unknown"
     except Exception as e:
-        print(f"DEBUG SESSION: Error detecting session for {dt_val}: {e}")
         return "Unknown"
+
 
 
 # ── MT5 worker callback ───────────────────────────────────────────────────────
