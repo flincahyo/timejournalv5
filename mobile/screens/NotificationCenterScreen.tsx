@@ -3,14 +3,14 @@ import React, {
 } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Animated, Easing,
-  TextInput, KeyboardAvoidingView, Platform, Dimensions
+  TextInput, KeyboardAvoidingView, Platform, Dimensions, RefreshControl
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import {
   ArrowLeft, TrendingUp, TrendingDown, Newspaper, Bell,
   ChevronDown, ChevronUp, BarChart2, Radio, Link2,
-  RefreshCw, Settings, Zap, AlertTriangle, CheckCircle,
-  XCircle, Activity, Info, Shield
+  RefreshCw, Settings, Zap, CheckCircle,
+  XCircle, Shield
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../Constants';
@@ -524,25 +524,29 @@ function TradeRecapTab({ isDark, trades, onResult, recapSettings, onUpdateSettin
 
 // ── News Recap Tab ─────────────────────────────────────────────────────────────
 function NewsRecapTab({ isDark }: { isDark: boolean }) {
-  const [news,    setNews]    = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [news,      setNews]      = useState<any[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        const res   = await fetch(`${API_URL}/alerts/history`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const newsHistory = (data.history || []).filter((h: any) => h.data?.type === 'news');
-          setNews(newsHistory.slice(0, MAX_ITEMS));
-        }
-      } catch (_) {}
-      finally { setLoading(false); }
-    })();
-  }, []);
+  const fetchNews = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res   = await fetch(`${API_URL}/alerts/history?type=news`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNews((data.history || []).slice(0, 10));
+      }
+    } catch (_) {}
+    finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => { fetchNews(); }, []);
 
   const t  = isDark ? C.text.dark    : C.text.light;
   const t2 = isDark ? C.text2.dark   : C.text2.light;
@@ -550,10 +554,13 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
   const bg = isDark ? C.surface.dark : C.surface.light;
   const b  = isDark ? C.border.dark  : C.border.light;
 
-  const IMPACT: Record<string, { color: string; Icon: any }> = {
-    high:   { color: C.red,   Icon: AlertTriangle },
-    medium: { color: C.amber, Icon: Activity      },
-    low:    { color: C.green, Icon: Info          },
+  // Render impact color + icon from the `impact` field saved in history data
+  const getImpactStyle = (impact: string) => {
+    switch ((impact || '').toLowerCase()) {
+      case 'high':   return { color: C.red,   label: 'HIGH' };
+      case 'medium': return { color: C.amber, label: 'MED'  };
+      default:       return { color: C.green, label: 'LOW'  };
+    }
   };
 
   if (loading) {
@@ -569,13 +576,20 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
 
   if (news.length === 0) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+      <ScrollView
+        contentContainerStyle={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchNews(true)}
+            tintColor={C.accent} colors={[C.accent]} />
+        }
+      >
         <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: isDark ? C.surface2.dark : C.surface2.light, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
           <Newspaper size={28} color={t3} />
         </View>
         <Text style={{ fontSize: 15, fontWeight: '800', color: t, textAlign: 'center' }}>No news alerts yet</Text>
         <Text style={{ fontSize: 12, fontWeight: '500', color: t2, textAlign: 'center', marginTop: 6 }}>Triggered economic news notifications will appear here</Text>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -583,13 +597,22 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
     ...h,
     dateStr: h.triggeredAt || '',
     title:   h.data?.title || 'News Alert',
-    body:    h.data?.body || '',
+    body:    h.data?.body  || '',
     symbol:  h.data?.symbol || '',
+    impact:  h.data?.impact || '',
   }));
   const groups = groupByDate(items);
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, paddingTop: 8 }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, paddingTop: 8 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => fetchNews(true)}
+          tintColor={C.accent} colors={[C.accent]} />
+      }
+    >
       {groups.map(group => (
         <View key={group.date}>
           <Text style={{ fontSize: 10, fontWeight: '900', letterSpacing: 1, color: t3, marginTop: 16, marginBottom: 8, marginLeft: 4 }}>
@@ -597,15 +620,16 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
           </Text>
           <View style={{ backgroundColor: bg, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: b }}>
             {group.items.map((item: any, i: number) => {
-              const time = formatTime(item.triggeredAt || '');
+              const time  = formatTime(item.triggeredAt || '');
+              const impSt = getImpactStyle(item.impact);
               return (
                 <View key={i} style={{
                   flexDirection: 'row', alignItems: 'flex-start',
                   paddingHorizontal: 16, paddingVertical: 14,
                   borderBottomWidth: i < group.items.length - 1 ? 1 : 0, borderBottomColor: b,
                 }}>
-                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${C.amber}18`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <Newspaper size={18} color={C.amber} strokeWidth={2} />
+                  <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: `${impSt.color}18`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Newspaper size={18} color={impSt.color} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -618,8 +642,8 @@ function NewsRecapTab({ isDark }: { isDark: boolean }) {
                       {item.body}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                      <View style={{ backgroundColor: `${C.amber}18`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
-                        <Text style={{ fontSize: 9, fontWeight: '800', color: C.amber }}>NEWS ALERT</Text>
+                      <View style={{ backgroundColor: `${impSt.color}18`, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: impSt.color }}>{impSt.label} IMPACT</Text>
                       </View>
                       {item.symbol ? <Text style={{ fontSize: 10, fontWeight: '700', color: t3 }}>{item.symbol}</Text> : null}
                     </View>
@@ -654,14 +678,21 @@ function AlertsTab({ isDark }: { isDark: boolean }) {
     (async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const res = await fetch(`${API_URL}/alerts/history`, {
+        // Fetch candle alerts only — news alerts go to NewsRecapTab
+        const res = await fetch(`${API_URL}/alerts/history?type=candle`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
-          // data.history = [{id, data:{title,body,symbol,type,alert_data}, triggeredAt}]
-          const filtered = (data.history || []).filter((h: any) => h.data?.type !== 'news');
-          setAlerts(filtered.slice(0, 10));
+          // Also include price alerts: re-fetch without type and filter locally
+          const res2 = await fetch(`${API_URL}/alerts/history?type=price`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data2 = res2.ok ? await res2.json() : { history: [] };
+          const combined = [...(data.history || []), ...(data2.history || [])]
+            .sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime())
+            .slice(0, 10);
+          setAlerts(combined);
         }
       } catch (_) {}
       finally { setLoading(false); }

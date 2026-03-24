@@ -1480,13 +1480,17 @@ async def create_alert(req: AlertRequest, user: User = Depends(get_current_user)
 
 # ── History routes MUST be defined BEFORE /{alert_id} to avoid path collision ──
 @app.get("/api/alerts/history")
-async def get_alert_history(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(AlertHistory)
-        .where(AlertHistory.user_id == user.id)
-        .order_by(AlertHistory.triggered_at.desc())
-        .limit(10)
-    )
+async def get_alert_history(type: Optional[str] = None, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """
+    Returns alert history for the current user.
+    Optional query param ?type=news or ?type=candle/price to filter.
+    Each type pool is capped at 10 entries.
+    """
+    query = select(AlertHistory).where(AlertHistory.user_id == user.id)
+    if type:
+        query = query.where(AlertHistory.data["type"].as_string() == type)
+    query = query.order_by(AlertHistory.triggered_at.desc()).limit(10)
+    result = await db.execute(query)
     history = []
     for h in result.scalars().all():
         history.append({
@@ -2370,7 +2374,7 @@ async def _alert_evaluator_loop():
                                     flag_modified(alert_row, "data")
                                     await db.commit()
 
-                                # Save to History
+                                # Save to History (price/candle type only — news pool is separate)
                                 history_entry = AlertHistory(
                                     id=str(uuid.uuid4()),
                                     user_id=user.id,
@@ -2386,17 +2390,22 @@ async def _alert_evaluator_loop():
                                 )
                                 db.add(history_entry)
                                 
-                                # Enforce history limit (10 max per user)
-                                limit = 10
+                                # Enforce history limit: 10 max per user FOR non-news entries only
+                                ALERT_HISTORY_LIMIT = 10
                                 await db.flush()
                                 
-                                # Delete old entries if exceeding limit
+                                # Prune only price/candle alert history (not news)
                                 hist_count_res = await db.execute(
-                                    select(AlertHistory).where(AlertHistory.user_id == user.id).order_by(AlertHistory.triggered_at.desc())
+                                    select(AlertHistory)
+                                    .where(
+                                        AlertHistory.user_id == user.id,
+                                        AlertHistory.data["type"].as_string().notin_(["news"])
+                                    )
+                                    .order_by(AlertHistory.triggered_at.desc())
                                 )
                                 all_hist = hist_count_res.scalars().all()
-                                if len(all_hist) > limit:
-                                    to_delete = all_hist[limit:]
+                                if len(all_hist) > ALERT_HISTORY_LIMIT:
+                                    to_delete = all_hist[ALERT_HISTORY_LIMIT:]
                                     for old_h in to_delete:
                                         await db.delete(old_h)
                                 
@@ -2496,43 +2505,70 @@ async def _news_evaluator_loop():
                             # If event is within the lead time window
                             # Also check that it hasn't passed yet
                             if now_dt < ev_dt <= threshold_dt:
-                                # Track notification per user + event
-                                notify_id = f"{user.id}_{ev_key}"
+                                # Track notification per user + event + date (restart-safe dedup)
+                                notify_date = now_dt.strftime("%Y-%m-%d")
+                                notify_id = f"{user.id}_{ev_key}_{notify_date}"
                                 
                                 if notify_id not in _news_notified:
                                     _news_notified.add(notify_id)
                                     forecast = ev.get("forecast", "-")
                                     prev = ev.get("previous", "-")
                                     
-                                    impact_emoji = "🔴" if impact == "High" else ("🟠" if impact == "Medium" else "⚪")
+                                    # Use plain-text impact label (no emoji) — safe for SQL_ASCII DB
+                                    # UI can render icons client-side based on impact field
+                                    impact_label = "[HIGH]" if impact == "High" else ("[MED]" if impact == "Medium" else "[LOW]")
+                                    push_title = f"{impact_label} {country} News Alert"
+                                    push_body = f"{title} in {minutes_before}min. Forecast: {forecast} | Prev: {prev}"
                                     
                                     await send_expo_push_notification(
                                         push_token,
-                                        f"{impact_emoji} {country} News Soon",
-                                        f"{title} rilis dalam {minutes_before} menit.\nForecast: {forecast} | Prev: {prev}",
-                                        {"type": "news", "eventKey": ev_key},
+                                        push_title,
+                                        push_body,
+                                        {
+                                            "type": "news",
+                                            "eventKey": ev_key,
+                                            "impact": impact,
+                                            "country": country,
+                                            "title": title,
+                                        },
                                         sound=news_sound
                                     )
 
-                                    # Save news alert to history so it shows in Notification Center
+                                    # Save news alert to history (separate pool from price/candle)
                                     try:
                                         history_entry = AlertHistory(
                                             id=str(uuid.uuid4()),
                                             user_id=user.id,
                                             alert_id=f"news_{ev_key[:20]}",
                                             data={
-                                                "title": f"{impact_emoji} {country} News Soon",
-                                                "body": f"{title} rilis dalam {minutes_before} menit.",
+                                                "title": push_title,
+                                                "body": f"{title} in {minutes_before}min.",
                                                 "symbol": country,
                                                 "type": "news",
+                                                "impact": impact,
                                                 "event_key": ev_key
                                             },
                                             triggered_at=datetime.datetime.utcnow()
                                         )
                                         db.add(history_entry)
-                                        # No need to commit here, it will commit at the end of user loop if we wanted, 
-                                        # but better to commit promptly for news
-                                        await db.commit() 
+                                        await db.flush()
+                                        
+                                        # Prune NEWS history to 10 max — separate from price/candle pool
+                                        NEWS_HISTORY_LIMIT = 10
+                                        news_hist_res = await db.execute(
+                                            select(AlertHistory)
+                                            .where(
+                                                AlertHistory.user_id == user.id,
+                                                AlertHistory.data["type"].as_string() == "news"
+                                            )
+                                            .order_by(AlertHistory.triggered_at.desc())
+                                        )
+                                        all_news_hist = news_hist_res.scalars().all()
+                                        if len(all_news_hist) > NEWS_HISTORY_LIMIT:
+                                            for old_h in all_news_hist[NEWS_HISTORY_LIMIT:]:
+                                                await db.delete(old_h)
+                                        
+                                        await db.commit()
                                     except Exception as hist_e:
                                         print(f"⚠ Failed to save news history: {hist_e}")
                                         await db.rollback()
