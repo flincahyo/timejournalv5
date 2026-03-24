@@ -229,7 +229,6 @@ def detect_session(dt_val):
 
         # Session open/close in local exchange time
         london_open    = 8.0   <= lh  < 17.0   # 08:00 - 17:00 London local
-        pre_london     = 7.0   <= lh  < 8.0    # 07:00 - 08:00 London (Frankfurt/pre-market)
         ny_open        = 9.5   <= nyh < 17.0   # 09:30 - 17:00 NY local
         sydney_open    = 7.0   <= syh < 16.0   # 07:00 - 16:00 Sydney local
         tokyo_open     = 9.0   <= tkh < 18.0   # 09:00 - 18:00 Tokyo local
@@ -237,7 +236,6 @@ def detect_session(dt_val):
         if london_open and ny_open:  return "Overlap LN+NY"
         if london_open:              return "London"
         if ny_open:                  return "New York"
-        if pre_london:               return "Pre-London"
         if tokyo_open:               return "Tokyo"
         if sydney_open:              return "Sydney"
 

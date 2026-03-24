@@ -243,7 +243,6 @@ function StatCard({ label, value, sub, positive, isDark }: any) {
 const SESSION_DATA = [
   { name: 'Sydney',        color: '#f97316', wibDST: '03:00–12:00', wibNoDST: '04:00–13:00' },
   { name: 'Tokyo',         color: '#10b981', wibDST: '07:00–16:00', wibNoDST: '07:00–16:00' }, // JST, no DST
-  { name: 'Pre-London',    color: '#06b6d4', wibDST: '13:00–14:00', wibNoDST: '14:00–15:00' }, // Frankfurt pre-market
   { name: 'London',        color: '#3b82f6', wibDST: '14:00–23:00', wibNoDST: '15:00–00:00' },
   { name: 'Overlap LN+NY', color: '#8b5cf6', wibDST: '19:00–23:00', wibNoDST: '20:00–00:00' },
   { name: 'New York',      color: '#f59e0b', wibDST: '19:00–04:00', wibNoDST: '20:00–05:00' },
@@ -267,7 +266,6 @@ function getSessionCurrentWIB(name: string, dst: ReturnType<typeof getDSTState>)
   switch (name) {
     case 'Sydney':        return dst.aus ? '03:00–12:00' : '04:00–13:00';
     case 'Tokyo':         return '07:00–16:00';
-    case 'Pre-London':    return dst.eu  ? '13:00–14:00' : '14:00–15:00';
     case 'London':        return dst.eu  ? '14:00–23:00' : '15:00–00:00';
     case 'Overlap LN+NY': return (dst.us && dst.eu) ? '19:00–23:00' :
                                  (!dst.us && !dst.eu) ? '20:00–00:00' :
