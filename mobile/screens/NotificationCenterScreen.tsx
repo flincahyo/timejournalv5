@@ -40,26 +40,34 @@ const EMOTION_OPTIONS = ['Confident', 'Greedy', 'Fear', 'Neutral', 'Excited', 'F
 function formatTime(ds: string): string {
   if (!ds) return '';
   try {
-    let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
-    // If no timezone suffix, treat as UTC (backend sends naive UTC). 
-    // Check for suffix 'Z', '+' offset, or '-' offset after the date part (index 10).
+    // MT5 uses dots (2024.03.24) which can fail on certain JS engines (Hermes).
+    // Normalize to standard ISO dashes and replace space with T.
+    let n = ds.replace(/\./g, '-').replace(/\//g, '-').replace(' ', 'T');
+    
+    // Check for existing timezone suffix
     const hasTZ = n.includes('Z') || n.includes('+', 10) || (n.includes('-', 11)); 
-    if (n && !hasTZ) {
-      n += 'Z';
+    
+    // If no timezone suffix, treat as local time (Journal style) instead of forcing UTC.
+    // This matches the user's WIB expectation when the backend sends naive strings.
+    const date = new Date(n);
+    if (isNaN(date.getTime())) {
+      // If still invalid, try to just extract the HH:mm segment if it's a "T" string
+      if (n.includes('T')) return n.split('T')[1].substring(0, 5);
+      return ds;
     }
-    return new Date(n).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  } catch { return ''; }
+    
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch {
+    // Final fallback: attempt raw slice if format is known
+    if (ds.includes(' ')) return ds.split(' ')[1].substring(0, 5);
+    return ds;
+  }
 }
 
 function formatDate(ds: string): string {
   if (!ds) return '';
   try {
-    let n = ds.includes(' ') && !ds.includes('T') ? ds.replace(' ', 'T') : ds;
-    // If no timezone suffix, treat as UTC (backend sends naive UTC).
-    const hasTZ = n.includes('Z') || n.includes('+', 10) || (n.includes('-', 11)); 
-    if (n && !hasTZ) {
-      n += 'Z';
-    }
+    const n = ds.replace(/\./g, '-').replace(/\//g, '-').replace(' ', 'T');
     const d = new Date(n);
     const today = new Date();
     const yest  = new Date(); yest.setDate(yest.getDate() - 1);
