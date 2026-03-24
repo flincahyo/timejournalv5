@@ -238,20 +238,19 @@ function StatCard({ label, value, sub, positive, isDark }: any) {
   );
 }
 
-// ── Session Card (swipeable: stats + market map) ───────────────────────────
+// ── Session Card (page-switch via tappable dots, no swipe to avoid tab nav conflict) ───
 const SESSION_DATA = [
-  { name: 'London',        color: '#3b82f6', wib: '15:00–02:00', utc: '08:00–17:00', local: '08:00–17:00 BST/GMT' },
-  { name: 'New York',      color: '#f59e0b', wib: '20:30–00:00', utc: '12:30–17:00', local: '09:30–17:00 EDT/EST' },
-  { name: 'Overlap LN+NY', color: '#8b5cf6', wib: '20:30–00:00', utc: '13:30–17:00', local: 'LN + NY open simultaneously' },
-  { name: 'Pre-London',    color: '#06b6d4', wib: '14:00–15:00', utc: '07:00–08:00', local: '07:00–08:00 Europe/London' },
-  { name: 'Tokyo',         color: '#10b981', wib: '16:00–01:00', utc: '09:00–18:00', local: '09:00–18:00 JST' },
-  { name: 'Sydney',        color: '#f97316', wib: '04:00–13:00', utc: '21:00–06:00', local: '07:00–16:00 AEDT/AEST' },
+  // WIB = UTC+7. Times shown for winter/standard time. BST/EDT shift by -1h.
+  { name: 'Sydney',        color: '#f97316', wib: '04:00–13:00', utc: '21:00–06:00 prev' },
+  { name: 'Tokyo',         color: '#10b981', wib: '07:00–16:00', utc: '00:00–09:00'      },
+  { name: 'Pre-London',    color: '#06b6d4', wib: '14:00–15:00', utc: '07:00–08:00'      },
+  { name: 'London',        color: '#3b82f6', wib: '15:00–00:00', utc: '08:00–17:00'      },
+  { name: 'Overlap LN+NY', color: '#8b5cf6', wib: '21:30–00:00', utc: '14:30–17:00'      },
+  { name: 'New York',      color: '#f59e0b', wib: '21:30–05:00', utc: '14:30–22:00'      },
 ];
 
 function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
   const [cardPage, setCardPage] = useState(0);
-  const scrollRef = useRef<any>(null);
-  const cardW = SCREEN_WIDTH - 40;
 
   const t  = isDark ? C.text.dark    : C.text.light;
   const t2 = isDark ? C.text2.dark   : C.text2.light;
@@ -262,39 +261,34 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
 
   return (
     <View style={{ marginBottom: 16 }}>
-      {/* Label + page dots */}
+      {/* Label + tappable page dots */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <Text style={{ fontSize: 13, fontWeight: '900', color: t }}>
           {cardPage === 0 ? 'Session Overview' : 'Market Map'}
         </Text>
         <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
           {[0, 1].map(i => (
-            <View key={i} style={{
-              width: cardPage === i ? 16 : 6, height: 6, borderRadius: 3,
-              backgroundColor: cardPage === i ? C.accent : b,
-            }} />
+            <TouchableOpacity
+              key={i}
+              onPress={() => { Haptics.selectionAsync(); setCardPage(i); }}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            >
+              <View style={{
+                width: cardPage === i ? 20 : 6, height: 6, borderRadius: 3,
+                backgroundColor: cardPage === i ? C.accent : b,
+              }} />
+            </TouchableOpacity>
           ))}
         </View>
       </View>
 
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled={false}
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={e => {
-          const page = Math.round(e.nativeEvent.contentOffset.x / cardW);
-          setCardPage(page);
-        }}
-        decelerationRate="fast"
-        snapToInterval={cardW}
-        snapToAlignment="start"
-      >
-        {/* Page 1 — Session stats bars */}
-        <View style={{ width: cardW, backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
-          {SESSION_DATA.filter(s => s.name !== 'Overlap LN+NY').map((session, idx, arr) => {
+      {/* Page 0 — Session stats bars */}
+      {cardPage === 0 && (
+        <View style={{ backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
+          {SESSION_DATA.map((session, idx, arr) => {
             const count = trades.filter((tr: any) => {
               const s = (tr.session || '').toLowerCase();
+              if (session.name === 'Overlap LN+NY') return s.includes('overlap') || s === 'overlap ln+ny';
               return s === session.name.toLowerCase();
             }).length;
             const pct = trades.length > 0 ? Math.round((count / trades.length) * 100) : 0;
@@ -315,11 +309,13 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
             );
           })}
         </View>
+      )}
 
-        {/* Page 2 — Market Map table */}
-        <View style={{ width: cardW, backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
+      {/* Page 1 — Market Map table */}
+      {cardPage === 1 && (
+        <View style={{ backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
           <View style={{ flexDirection: 'row', marginBottom: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: b }}>
-            <Text style={{ flex: 1.2, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8 }}>SESSION</Text>
+            <Text style={{ flex: 1.3, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8 }}>SESSION</Text>
             <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8, textAlign: 'center' }}>WIB</Text>
             <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8, textAlign: 'right' }}>UTC</Text>
           </View>
@@ -329,22 +325,23 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
               borderBottomWidth: idx < SESSION_DATA.length - 1 ? 1 : 0,
               borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
             }}>
-              <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ flex: 1.3, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: session.color }} />
-                <Text style={{ fontSize: 10, fontWeight: '800', color: t }}>{session.name}</Text>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: t }} numberOfLines={1}>{session.name}</Text>
               </View>
               <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t2, textAlign: 'center' }}>{session.wib}</Text>
               <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t3, textAlign: 'right' }}>{session.utc}</Text>
             </View>
           ))}
           <Text style={{ fontSize: 8, fontWeight: '600', color: t3, marginTop: 10, textAlign: 'center' }}>
-            DST-aware · London/NY auto-adjust Mar/Nov
+            Standard time (WIB) · shifts ±1h during BST/EDT
           </Text>
         </View>
-      </ScrollView>
+      )}
     </View>
   );
 }
+
 
 // ── Hourly Performance ────────────────────────────────────────────────────────
 function HourlyPerformance({ trades, isDark }: { trades: any[], isDark: boolean }) {
