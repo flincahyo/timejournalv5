@@ -427,20 +427,15 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     if not credentials:
-        print("DEBUG AUTH: No credentials found in request")
         raise HTTPException(status_code=401, detail="Not authenticated")
-    print(f"DEBUG AUTH: Token found: {credentials.credentials[:10]}...")
     payload = decode_token(credentials.credentials)
     if not payload:
-        print("DEBUG AUTH: Token decoding failed")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     user_id = payload.get("sub")
     if not user_id:
-        print("DEBUG AUTH: No sub in payload")
         raise HTTPException(status_code=401, detail="Invalid token payload")
     user = await db.get(User, user_id)
     if not user:
-        print(f"DEBUG AUTH: User {user_id} not found in DB")
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
@@ -808,7 +803,7 @@ async def connect_mt5(
     await db.commit()
     await db.refresh(active_acc)
 
-    print(f"DEBUG MT5: Account {active_acc.id} (login {req.login}) set to ACTIVE for user {user.id}")
+    print(f"[MT5] Account {req.login}@{req.server} activated for user {user.id}")
 
     # Return cached trades from DB for THIS specific account
     result = await db.execute(select(Trade).where(Trade.account_id == active_acc.id))
@@ -955,7 +950,6 @@ async def register_push_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Register Expo push token for the current user."""
-    print(f"DEBUG push-token POST: user={user.id}, token={req.token[:30]}...")
     s = await db.get(UserSettings, user.id)
     if not s:
         s = UserSettings(user_id=user.id, theme="light", news_settings={})
@@ -963,7 +957,7 @@ async def register_push_token(
     s.expo_push_token = req.token
     s.updated_at = datetime.datetime.utcnow()
     await db.commit()
-    print(f"🔔 Push token registered for user {user.id}: {req.token[:30]}...")
+    print(f"[PUSH] Token registered for user {user.id}")
     return {"ok": True}
 
 @app.get("/api/push-token")
@@ -974,7 +968,6 @@ async def get_push_token(
     """Debug: Check the current push token for the authenticated user."""
     s = await db.get(UserSettings, user.id)
     token = s.expo_push_token if s else None
-    print(f"DEBUG push-token GET: user={user.id}, has_token={bool(token)}")
     return {"ok": True, "has_token": bool(token), "token_preview": token[:20] + '...' if token else None}
 
 
@@ -1536,25 +1529,22 @@ class TestPushRequest(BaseModel):
 async def test_push(req: TestPushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Called by web UI 'Test' button — sends a test push notification to the user's mobile device."""
     s = await db.get(UserSettings, user.id)
-    print(f"DEBUG test-push: user={user.id}, has_settings={s is not None}, push_token={s.expo_push_token[:30] if s and s.expo_push_token else None}")
     if not s or not s.expo_push_token:
         return {"ok": False, "reason": "No push token registered"}
     
-    title = "🔔 Alert Test"
+    title = "Alert Test"
     body = "This is a test push notification from TimeJournal."
     
-    # If alertId provided, use alert details
     if req.alertId:
         result = await db.execute(select(Alert).where(Alert.id == req.alertId, Alert.user_id == user.id))
         alert = result.scalar_one_or_none()
-        print(f"DEBUG test-push: alertId={req.alertId}, found_in_db={alert is not None}")
         if alert:
             a = alert.data
             if a.get("type") == "candle":
-                title = f"🚨 {a.get('symbol')} {a.get('timeframe')} Momentum! (Test)"
-                body = f"Simulated candle alert: ≥{a.get('minBodyPips')} pips, ≤{a.get('maxWickPercent')}% wick"
+                title = f"{a.get('symbol')} {a.get('timeframe')} Momentum! (Test)"
+                body = f"Simulated candle alert: >={a.get('minBodyPips')} pips, <={a.get('maxWickPercent')}% wick"
             else:
-                title = f"🎯 {a.get('symbol')} Price Target! (Test)"
+                title = f"{a.get('symbol')} Price Target! (Test)"
                 body = f"{a.get('symbol')} crossed {a.get('trigger')} {a.get('targetPrice')}"
             sound = a.get("soundUri") or a.get("sound", "default")
         else:
@@ -1562,7 +1552,7 @@ async def test_push(req: TestPushRequest, user: User = Depends(get_current_user)
     else:
         sound = "default"
     
-    print(f"DEBUG test-push: sending — title={title}, sound={sound}")
+    print(f"[PUSH] Test notification sent to user {user.id}")
     await send_expo_push_notification(s.expo_push_token, title, body, {"type": "test"}, sound=sound)
     return {"ok": True}
 
@@ -1576,26 +1566,19 @@ class FirePushRequest(BaseModel):
 async def fire_push(req: FirePushRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Called by web AlertWatcher when an alert actually fires — sends push notification to mobile."""
     s = await db.get(UserSettings, user.id)
-    print(f"DEBUG fire-push: user={user.id}, has_token={bool(s and s.expo_push_token)}")
     if not s or not s.expo_push_token:
         return {"ok": False, "reason": "No push token"}
     
-    # Get sound from alert
     result = await db.execute(select(Alert).where(Alert.id == req.alertId, Alert.user_id == user.id))
     alert = result.scalar_one_or_none()
-    sound = "default"
-    if alert:
-        a = alert.data
-        sound = a.get("soundUri") or a.get("sound", "default")
-        print(f"DEBUG fire-push: alertId={req.alertId}, found_alert=True, sound={sound}")
-    else:
-        print(f"DEBUG fire-push: alertId={req.alertId}, found_alert=False (no DB entry)")
+    sound = (alert.data.get("soundUri") or alert.data.get("sound", "default")) if alert else "default"
     
     await send_expo_push_notification(
         s.expo_push_token, req.title, req.body,
         {"alertId": req.alertId, "type": "alert", "soundUrl": sound},
         sound=sound
     )
+    print(f"[PUSH] Alert fired: {req.alertId} → user {user.id}")
     return {"ok": True}
 
 
@@ -2227,6 +2210,16 @@ def _strip_emoji(text: str) -> str:
     """Remove emoji/non-ASCII chars so INSERT into SQL_ASCII DB won't fail."""
     return text.encode('ascii', 'ignore').decode('ascii').strip()
 
+def _event_in_window(ev_date_str: str, now_dt: datetime.datetime, threshold_dt: datetime.datetime) -> bool:
+    """Returns True if the event date falls within (now_dt, threshold_dt]."""
+    try:
+        ev_dt = datetime.datetime.fromisoformat(ev_date_str.replace("Z", "+00:00"))
+        if ev_dt.tzinfo is None:
+            ev_dt = ev_dt.replace(tzinfo=datetime.timezone.utc)
+        return now_dt < ev_dt <= threshold_dt
+    except:
+        return False
+
 async def _alert_evaluator_loop():
     """Runs every 5 seconds. Evaluates alerts against cached prices and sends push notifications."""
     COOLDOWN_SECONDS = 60  # Don't re-notify same alert within 60s
@@ -2366,6 +2359,7 @@ async def _alert_evaluator_loop():
                                         {"alertId": alert_id, "symbol": symbol, "soundUrl": alert_sound},
                                         sound=alert_sound
                                     )
+                                    print(f"[ALERT] Fired: {title} | user={user.id} | alert={alert_id}")
                                 
                                 # Disable "Once" alerts
                                 if alert.get("frequency") == "Once":
@@ -2427,16 +2421,17 @@ async def _update_news_cache():
             res = await client.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json", headers={"User-Agent": "Mozilla/5.0"})
             if res.status_code == 200:
                 _news_cache = res.json()
+                print(f"[NEWS] Cache updated: {len(_news_cache)} events loaded")
+            else:
+                print(f"[NEWS] Cache fetch failed: HTTP {res.status_code}")
     except Exception as e:
-        print(f"⚠ Failed to fetch news for cache: {e}")
+        print(f"[NEWS] Cache fetch error: {e}")
 
 async def _news_evaluator_loop():
     """Runs every 1 minute. Evaluates news events against user settings and pushes notifications."""
-    print("📰 News evaluator loop starting (immediate fetch)...")
-    await _update_news_cache() # Fill cache immediately
-    
+    await _update_news_cache()
     await asyncio.sleep(15)  # Wait for DB init
-    print("📰 News evaluator loop running")
+    print("[NEWS] Evaluator loop started")
     
     last_fetch = time.time()
     
@@ -2459,14 +2454,14 @@ async def _news_evaluator_loop():
                     # Maintenance: clear old notified tracking once a day
                     if len(_news_notified) > 1000:
                         _news_notified.clear()
+                        print("[NEWS] Cleared stale notification tracker")
                     
                     for user in users:
                         if not user.settings or not user.settings.expo_push_token:
                             continue
                         
                         settings = user.settings.news_settings or {}
-                        # User must have news alerts enabled globally
-                        if not settings.get("enabled", True): 
+                        if not settings.get("enabled", True):
                             continue
                             
                         push_token = user.settings.expo_push_token
@@ -2477,6 +2472,14 @@ async def _news_evaluator_loop():
                         
                         threshold_dt = now_dt + datetime.timedelta(minutes=minutes_before)
                         
+                        # Log current evaluation context (once per user per cycle)
+                        events_in_window = [
+                            ev for ev in _news_cache
+                            if ev.get("date") and _event_in_window(ev.get("date", ""), now_dt, threshold_dt)
+                        ]
+                        if events_in_window:
+                            print(f"[NEWS] user={user.id} | window={minutes_before}min | {len(events_in_window)} event(s) in window | selected={len(selected_events)} | autoHigh={auto_high_impact}")
+                        
                         for ev in _news_cache:
                             impact = ev.get("impact", "")
                             title = ev.get("title", "Berita Ekonomi")
@@ -2485,15 +2488,16 @@ async def _news_evaluator_loop():
                             
                             if not ev_date_str: continue
                             
-                            # Unique key for this specific news event
                             ev_key = f"{title}_{country}_{ev_date_str}"
-                            
-                            # Check if user wants this alert
                             is_selected = ev_key in selected_events
                             is_auto_high = auto_high_impact and impact == "High"
                             
                             if not (is_selected or is_auto_high):
                                 continue
+                            
+                            # Event is wanted by user — log why it matched
+                            match_reason = "selected" if is_selected else "autoHighImpact"
+                            print(f"[NEWS] Checking: '{title}' ({country} {impact}) | match={match_reason} | ev_key={ev_key[:40]}")
                                 
                             try:
                                 ev_dt = datetime.datetime.fromisoformat(ev_date_str.replace("Z", "+00:00"))
@@ -2505,7 +2509,7 @@ async def _news_evaluator_loop():
                             # If event is within the lead time window
                             # Also check that it hasn't passed yet
                             if now_dt < ev_dt <= threshold_dt:
-                                # Track notification per user + event + date (restart-safe dedup)
+                                print(f"[NEWS] In window: '{title}' at {ev_dt.strftime('%H:%M UTC')} (window closes {threshold_dt.strftime('%H:%M UTC')})")
                                 notify_date = now_dt.strftime("%Y-%m-%d")
                                 notify_id = f"{user.id}_{ev_key}_{notify_date}"
                                 
@@ -2520,6 +2524,7 @@ async def _news_evaluator_loop():
                                     push_title = f"{impact_label} {country} News Alert"
                                     push_body = f"{title} in {minutes_before}min. Forecast: {forecast} | Prev: {prev}"
                                     
+                                    print(f"[NEWS] Sending: '{push_title}' -> user={user.id}")
                                     await send_expo_push_notification(
                                         push_token,
                                         push_title,
@@ -2576,9 +2581,9 @@ async def _news_evaluator_loop():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"⚠ News evaluator error: {e}")
+            print(f"[NEWS] Evaluator error: {e}")
             
-        await asyncio.sleep(60)  # Check every minute
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
