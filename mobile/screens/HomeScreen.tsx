@@ -238,19 +238,48 @@ function StatCard({ label, value, sub, positive, isDark }: any) {
   );
 }
 
-// ── Session Card (page-switch via tappable dots, no swipe to avoid tab nav conflict) ───
+// ── Session Card ─────────────────────────────────────────────────────────────
+// WIB times verified from reference: DST = markets on summer time, No DST = standard/winter
 const SESSION_DATA = [
-  // WIB = UTC+7. Times shown for winter/standard time. BST/EDT shift by -1h.
-  { name: 'Sydney',        color: '#f97316', wib: '04:00–13:00', utc: '21:00–06:00 prev' },
-  { name: 'Tokyo',         color: '#10b981', wib: '07:00–16:00', utc: '00:00–09:00'      },
-  { name: 'Pre-London',    color: '#06b6d4', wib: '14:00–15:00', utc: '07:00–08:00'      },
-  { name: 'London',        color: '#3b82f6', wib: '15:00–00:00', utc: '08:00–17:00'      },
-  { name: 'Overlap LN+NY', color: '#8b5cf6', wib: '21:30–00:00', utc: '14:30–17:00'      },
-  { name: 'New York',      color: '#f59e0b', wib: '21:30–05:00', utc: '14:30–22:00'      },
+  { name: 'Sydney',        color: '#f97316', wibDST: '03:00–12:00', wibNoDST: '04:00–13:00' },
+  { name: 'Tokyo',         color: '#10b981', wibDST: '07:00–16:00', wibNoDST: '07:00–16:00' }, // JST, no DST
+  { name: 'Pre-London',    color: '#06b6d4', wibDST: '13:00–14:00', wibNoDST: '14:00–15:00' }, // Frankfurt pre-market
+  { name: 'London',        color: '#3b82f6', wibDST: '14:00–23:00', wibNoDST: '15:00–00:00' },
+  { name: 'Overlap LN+NY', color: '#8b5cf6', wibDST: '19:00–23:00', wibNoDST: '20:00–00:00' },
+  { name: 'New York',      color: '#f59e0b', wibDST: '19:00–04:00', wibNoDST: '20:00–05:00' },
 ];
+
+/** Simple DST check: are the major markets on summer time right now? */
+function getDSTState(): { us: boolean; eu: boolean; aus: boolean } {
+  const now = new Date();
+  const m = now.getMonth() + 1; // 1–12
+  const d = now.getDate();
+  // US EDT:  ~Mar 8 – Nov 6  (2nd Sunday Mar → 1st Sunday Nov)
+  const us  = (m > 3 || (m === 3 && d >= 8))  && (m < 11 || (m === 11 && d < 7));
+  // EU BST/CEST: ~Mar 29 – Oct 26 (last Sunday Mar → last Sunday Oct)
+  const eu  = (m > 3 || (m === 3 && d >= 25)) && (m < 10 || (m === 10 && d < 27));
+  // AUS AEDT: Oct – Apr (Southern Hemisphere summer)
+  const aus = m >= 10 || m <= 3;
+  return { us, eu, aus };
+}
+
+function getSessionCurrentWIB(name: string, dst: ReturnType<typeof getDSTState>): string {
+  switch (name) {
+    case 'Sydney':        return dst.aus ? '03:00–12:00' : '04:00–13:00';
+    case 'Tokyo':         return '07:00–16:00';
+    case 'Pre-London':    return dst.eu  ? '13:00–14:00' : '14:00–15:00';
+    case 'London':        return dst.eu  ? '14:00–23:00' : '15:00–00:00';
+    case 'Overlap LN+NY': return (dst.us && dst.eu) ? '19:00–23:00' :
+                                 (!dst.us && !dst.eu) ? '20:00–00:00' :
+                                 dst.us ? '19:00–00:00' : '20:00–23:00';
+    case 'New York':      return dst.us  ? '19:00–04:00' : '20:00–05:00';
+    default: return '—';
+  }
+}
 
 function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
   const [cardPage, setCardPage] = useState(0);
+  const dst = useMemo(() => getDSTState(), []);
 
   const t  = isDark ? C.text.dark    : C.text.light;
   const t2 = isDark ? C.text2.dark   : C.text2.light;
@@ -282,10 +311,11 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
         </View>
       </View>
 
-      {/* Page 0 — Session stats bars */}
+      {/* Page 0 — Session stats with current WIB hours */}
       {cardPage === 0 && (
         <View style={{ backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
           {SESSION_DATA.map((session, idx, arr) => {
+            const wib = getSessionCurrentWIB(session.name, dst);
             const count = trades.filter((tr: any) => {
               const s = (tr.session || '').toLowerCase();
               if (session.name === 'Overlap LN+NY') return s.includes('overlap') || s === 'overlap ln+ny';
@@ -298,7 +328,7 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: session.color }} />
                     <Text style={{ fontSize: 11, fontWeight: '700', color: t2 }}>{session.name}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '600', color: t3 }}>{session.wib} WIB</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '600', color: t3 }}>{wib} WIB</Text>
                   </View>
                   <Text style={{ fontSize: 11, fontWeight: '900', color: t }}>{count} · {pct}%</Text>
                 </View>
@@ -311,13 +341,14 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
         </View>
       )}
 
-      {/* Page 1 — Market Map table */}
+      {/* Page 1 — Market Map: DST vs No DST columns */}
       {cardPage === 1 && (
         <View style={{ backgroundColor: bg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: b }}>
+          {/* Header */}
           <View style={{ flexDirection: 'row', marginBottom: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: b }}>
-            <Text style={{ flex: 1.3, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8 }}>SESSION</Text>
-            <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8, textAlign: 'center' }}>WIB</Text>
-            <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8, textAlign: 'right' }}>UTC</Text>
+            <Text style={{ flex: 1.4, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8 }}>SESSION</Text>
+            <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: '#f59e0b', letterSpacing: 0.8, textAlign: 'center' }}>DST (WIB)</Text>
+            <Text style={{ flex: 1, fontSize: 8, fontWeight: '900', color: t3, letterSpacing: 0.8, textAlign: 'right' }}>STD (WIB)</Text>
           </View>
           {SESSION_DATA.map((session, idx) => (
             <View key={session.name} style={{
@@ -325,16 +356,16 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
               borderBottomWidth: idx < SESSION_DATA.length - 1 ? 1 : 0,
               borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
             }}>
-              <View style={{ flex: 1.3, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <View style={{ flex: 1.4, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: session.color }} />
                 <Text style={{ fontSize: 10, fontWeight: '800', color: t }} numberOfLines={1}>{session.name}</Text>
               </View>
-              <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t2, textAlign: 'center' }}>{session.wib}</Text>
-              <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t3, textAlign: 'right' }}>{session.utc}</Text>
+              <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t2, textAlign: 'center' }}>{session.wibDST}</Text>
+              <Text style={{ flex: 1, fontSize: 9, fontWeight: '600', color: t3, textAlign: 'right' }}>{session.wibNoDST}</Text>
             </View>
           ))}
           <Text style={{ fontSize: 8, fontWeight: '600', color: t3, marginTop: 10, textAlign: 'center' }}>
-            Standard time (WIB) · shifts ±1h during BST/EDT
+            DST = summer time active · STD = standard/winter time
           </Text>
         </View>
       )}
