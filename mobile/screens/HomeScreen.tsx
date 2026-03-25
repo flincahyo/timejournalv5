@@ -631,6 +631,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
 
   const [cachedAIMessages, setCachedAIMessages] = useState<string[]>([]);
   const [isAICacheLoaded, setIsAICacheLoaded] = useState(false);
+  const [isAIFetching, setIsAIFetching] = useState(false);
   const randomAIIndex = useMemo(() => Math.floor(Math.random() * 10), []);
 
   useEffect(() => {
@@ -660,11 +661,17 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
           } catch (pe) { console.warn('Cache parse error'); }
         }
         
-        if (isMounted) setIsAICacheLoaded(true);
+        if (isMounted) {
+          setIsAICacheLoaded(true);
+          if (!hasValidCache && isConnected) setIsAIFetching(true);
+        }
         if (hasValidCache || !isConnected) return;
         
         const token = await AsyncStorage.getItem('userToken');
-        if (!token) return;
+        if (!token) {
+          if (isMounted) setIsAIFetching(false);
+          return;
+        }
         
         const res = await fetch(`${API_URL}/ai/proactive-messages`, {
           method: 'POST',
@@ -674,16 +681,22 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
         const data = await res.json();
         
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          if (isMounted) setCachedAIMessages(data.messages);
+          if (isMounted) {
+            setCachedAIMessages(data.messages);
+            setIsAIFetching(false);
+          }
           await AsyncStorage.setItem(cacheKey, JSON.stringify({
             timestamp: Date.now(),
             guardStatus,
             tradesLength: trades.length,
             messages: data.messages
           }));
+        } else {
+          if (isMounted) setIsAIFetching(false);
         }
       } catch (e) {
         console.warn('Fetch AI error:', e);
+        if (isMounted) setIsAIFetching(false);
       }
     };
     
@@ -954,7 +967,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
         onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)} 
         showProactiveBubble={true} 
         proactiveMessage={(() => {
-          if (!isAICacheLoaded) return "";
+          if (!isAICacheLoaded || isAIFetching) return "";
           if (cachedAIMessages && cachedAIMessages.length > 0) {
             const selected = cachedAIMessages[randomAIIndex % cachedAIMessages.length];
             return typeof selected === 'string' ? selected : String(Object.values(Object(selected))[0] || selected);
