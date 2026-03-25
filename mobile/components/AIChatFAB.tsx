@@ -11,8 +11,8 @@ interface AIChatFABProps {
   proactiveMessage?: string;
 }
 
-export const AIChatFAB: React.FC<AIChatFABProps> = ({ 
-  onPress, 
+export const AIChatFAB: React.FC<AIChatFABProps> = ({
+  onPress,
   showProactiveBubble = false,
   proactiveMessage = "Need trade insights?"
 }) => {
@@ -66,17 +66,15 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
   }, [scale, glowOpacity, shimmer, sweepAnim]);
 
   const hasShown = useRef(false);
-  const [displayedMessage, setDisplayedMessage] = useState("");
 
   // Proactive Bubble Animation
   useEffect(() => {
     if (showProactiveBubble && proactiveMessage && !hasShown.current) {
       hasShown.current = true;
-      setDisplayedMessage(proactiveMessage);
       setIsBubbleVisible(true);
       bubbleScale.setValue(0);
       bubbleOpacity.setValue(0);
-      
+
       Animated.parallel([
         Animated.spring(bubbleScale, {
           toValue: 1,
@@ -124,7 +122,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
     <View style={styles.container}>
       {/* Proactive Bubble */}
       {isBubbleVisible && (
-        <Animated.View 
+        <Animated.View
           style={[
             styles.bubbleContainer,
             {
@@ -137,7 +135,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
           ]}
         >
           <Text style={[styles.bubbleText, { color: isDark ? '#e2e8f0' : '#334155' }]}>
-            {displayedMessage}
+            {proactiveMessage}
           </Text>
           <TouchableOpacity onPress={hideBubble} style={styles.closeButton}>
             <X size={12} color={isDark ? '#94a3b8' : '#64748b'} />
@@ -146,7 +144,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
       )}
 
       {/* Floating Action Button */}
-      <TouchableOpacity 
+      <TouchableOpacity
         activeOpacity={1}
         onPressIn={() => {
           Animated.spring(scale, { toValue: 1.2, friction: 4, tension: 120, useNativeDriver: true }).start();
@@ -161,7 +159,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
         }}
       >
         {/* Glow Layer */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.glow,
             {
@@ -169,25 +167,25 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
               transform: [{ scale: scale }],
               backgroundColor: isDark ? 'rgba(99, 102, 241, 0.4)' : 'rgba(99, 102, 241, 0.3)',
             }
-          ]} 
+          ]}
         />
-        
+
         {/* Main Button */}
         <Animated.View style={[styles.button, { transform: [{ scale: scale }] }]}>
-           <LinearGradient
-              colors={isDark ? ['#4f46e5', '#3b82f6'] : ['#6366f1', '#4f46e5']}
-              style={[styles.gradient, { overflow: 'hidden' }]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-             <Animated.View style={{ position: 'absolute', inset: 0, transform: [{ translateX: tx }] }}>
-               <LinearGradient colors={['transparent', 'rgba(255,255,255,0.4)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-             </Animated.View>
-             
-             <Animated.View style={{ transform: [{ rotate: rotate }, { scale: shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.1] }) }] }}>
-               <Sparkles size={24} color="#ffffff" />
-             </Animated.View>
-           </LinearGradient>
+          <LinearGradient
+            colors={isDark ? ['#4f46e5', '#3b82f6'] : ['#6366f1', '#4f46e5']}
+            style={[styles.gradient, { overflow: 'hidden' }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Animated.View style={{ position: 'absolute', inset: 0, transform: [{ translateX: tx }] }}>
+              <LinearGradient colors={['transparent', 'rgba(255,255,255,0.4)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+            </Animated.View>
+
+            <Animated.View style={{ transform: [{ rotate: rotate }, { scale: shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.1] }) }] }}>
+              <Sparkles size={24} color="#ffffff" />
+            </Animated.View>
+          </LinearGradient>
         </Animated.View>
       </TouchableOpacity>
     </View>

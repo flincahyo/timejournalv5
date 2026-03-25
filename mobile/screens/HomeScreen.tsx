@@ -89,11 +89,11 @@ function BellButton({ onPress, hasUnread, isDark }: { onPress: () => void; hasUn
     if (!hasUnread) { swing.setValue(0); return; }
     const animate = Animated.loop(
       Animated.sequence([
-        Animated.timing(swing, { toValue: 1,   duration: 100, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(swing, { toValue: -1,  duration: 100, easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(swing, { toValue: 0.7, duration: 80,  easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(swing, { toValue: -0.7,duration: 80,  easing: Easing.linear, useNativeDriver: true }),
-        Animated.timing(swing, { toValue: 0,   duration: 80,  easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 1, duration: 100, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -1, duration: 100, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0.7, duration: 80, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -0.7, duration: 80, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0, duration: 80, easing: Easing.linear, useNativeDriver: true }),
         Animated.delay(2800),
       ])
     );
@@ -190,8 +190,8 @@ function AvatarBadge({ name, image, size = 44, onPress }: { name: string, image?
   };
 
   return (
-    <TouchableOpacity 
-      onPress={handlePress} 
+    <TouchableOpacity
+      onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       activeOpacity={0.9}
@@ -241,11 +241,11 @@ function StatCard({ label, value, sub, positive, isDark }: any) {
 // ── Session Card ─────────────────────────────────────────────────────────────
 // WIB times verified from reference: DST = markets on summer time, No DST = standard/winter
 const SESSION_DATA = [
-  { name: 'Sydney',        color: '#f97316', wibDST: '03:00–12:00', wibNoDST: '04:00–13:00' },
-  { name: 'Tokyo',         color: '#10b981', wibDST: '07:00–16:00', wibNoDST: '07:00–16:00' }, // JST, no DST
-  { name: 'London',        color: '#3b82f6', wibDST: '14:00–23:00', wibNoDST: '15:00–00:00' },
+  { name: 'Sydney', color: '#f97316', wibDST: '03:00–12:00', wibNoDST: '04:00–13:00' },
+  { name: 'Tokyo', color: '#10b981', wibDST: '07:00–16:00', wibNoDST: '07:00–16:00' }, // JST, no DST
+  { name: 'London', color: '#3b82f6', wibDST: '14:00–23:00', wibNoDST: '15:00–00:00' },
   { name: 'Overlap LN+NY', color: '#8b5cf6', wibDST: '19:00–23:00', wibNoDST: '20:00–00:00' },
-  { name: 'New York',      color: '#f59e0b', wibDST: '19:00–04:00', wibNoDST: '20:00–05:00' },
+  { name: 'New York', color: '#f59e0b', wibDST: '19:00–04:00', wibNoDST: '20:00–05:00' },
 ];
 
 /** Simple DST check: are the major markets on summer time right now? */
@@ -254,9 +254,9 @@ function getDSTState(): { us: boolean; eu: boolean; aus: boolean } {
   const m = now.getMonth() + 1; // 1–12
   const d = now.getDate();
   // US EDT:  ~Mar 8 – Nov 6  (2nd Sunday Mar → 1st Sunday Nov)
-  const us  = (m > 3 || (m === 3 && d >= 8))  && (m < 11 || (m === 11 && d < 7));
+  const us = (m > 3 || (m === 3 && d >= 8)) && (m < 11 || (m === 11 && d < 7));
   // EU BST/CEST: ~Mar 29 – Oct 26 (last Sunday Mar → last Sunday Oct)
-  const eu  = (m > 3 || (m === 3 && d >= 25)) && (m < 10 || (m === 10 && d < 27));
+  const eu = (m > 3 || (m === 3 && d >= 25)) && (m < 10 || (m === 10 && d < 27));
   // AUS AEDT: Oct – Apr (Southern Hemisphere summer)
   const aus = m >= 10 || m <= 3;
   return { us, eu, aus };
@@ -264,13 +264,13 @@ function getDSTState(): { us: boolean; eu: boolean; aus: boolean } {
 
 function getSessionCurrentWIB(name: string, dst: ReturnType<typeof getDSTState>): string {
   switch (name) {
-    case 'Sydney':        return dst.aus ? '03:00–12:00' : '04:00–13:00';
-    case 'Tokyo':         return '07:00–16:00';
-    case 'London':        return dst.eu  ? '14:00–23:00' : '15:00–00:00';
+    case 'Sydney': return dst.aus ? '03:00–12:00' : '04:00–13:00';
+    case 'Tokyo': return '07:00–16:00';
+    case 'London': return dst.eu ? '14:00–23:00' : '15:00–00:00';
     case 'Overlap LN+NY': return (dst.us && dst.eu) ? '19:00–23:00' :
-                                 (!dst.us && !dst.eu) ? '20:00–00:00' :
-                                 dst.us ? '19:00–00:00' : '20:00–23:00';
-    case 'New York':      return dst.us  ? '19:00–04:00' : '20:00–05:00';
+      (!dst.us && !dst.eu) ? '20:00–00:00' :
+        dst.us ? '19:00–00:00' : '20:00–23:00';
+    case 'New York': return dst.us ? '19:00–04:00' : '20:00–05:00';
     default: return '—';
   }
 }
@@ -279,11 +279,11 @@ function SessionCard({ trades, isDark }: { trades: any[], isDark: boolean }) {
   const [cardPage, setCardPage] = useState(0);
   const dst = useMemo(() => getDSTState(), []);
 
-  const t  = isDark ? C.text.dark    : C.text.light;
-  const t2 = isDark ? C.text2.dark   : C.text2.light;
-  const t3 = isDark ? C.text3.dark   : C.text3.light;
+  const t = isDark ? C.text.dark : C.text.light;
+  const t2 = isDark ? C.text2.dark : C.text2.light;
+  const t3 = isDark ? C.text3.dark : C.text3.light;
   const bg = isDark ? C.surface.dark : C.surface.light;
-  const b  = isDark ? C.border.dark  : C.border.light;
+  const b = isDark ? C.border.dark : C.border.light;
   const s2 = isDark ? C.surface2.dark : C.surface2.light;
 
   return (
@@ -388,7 +388,7 @@ function HourlyPerformance({ trades, isDark }: { trades: any[], isDark: boolean 
         map[key].pnl += pnl;
         map[key].total++;
         if (pnl > 0) map[key].wins++;
-      } catch (_) {}
+      } catch (_) { }
     });
     return Object.entries(map)
       .map(([hour, d]) => ({ hour, pnl: d.pnl, winPct: Math.round((d.wins / d.total) * 100), isWin: d.pnl >= 0 }))
@@ -531,7 +531,7 @@ const BackgroundEquityChart = React.memo(({ trades, isDark }: { trades: any[], i
 
     const lastPt = points[points.length - 1];
     const fillPtsStr = [...points.map(p => `${p.x},${p.y}`), `${lastPt.x},${H}`, `${points[0].x},${H}`].join(' ');
-    
+
     return { d: dStr, fillPts: fillPtsStr, color: strokeColor };
   }, [trades, isDark]);
 
@@ -630,23 +630,20 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
   }, [trades, accountInfo]);
 
   const [cachedAIMessages, setCachedAIMessages] = useState<string[]>([]);
-  const [isAICacheLoaded, setIsAICacheLoaded] = useState(false);
-  const [isAIFetching, setIsAIFetching] = useState(false);
   const randomAIIndex = useMemo(() => Math.floor(Math.random() * 10), []);
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const fetchAIMessages = async () => {
       try {
         if (!user?.id) {
-          if (isMounted) setIsAICacheLoaded(true);
           return;
         }
 
         const cacheKey = `ai_proactive_cache_${user.id}`;
         const cachedRaw = await AsyncStorage.getItem(cacheKey);
-        
+
         let hasValidCache = false;
         if (cachedRaw) {
           try {
@@ -660,46 +657,32 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
             }
           } catch (pe) { console.warn('Cache parse error'); }
         }
-        
-        if (isMounted) {
-          setIsAICacheLoaded(true);
-          if (!hasValidCache && isConnected) setIsAIFetching(true);
-        }
         if (hasValidCache || !isConnected) return;
-        
+
         const token = await AsyncStorage.getItem('userToken');
-        if (!token) {
-          if (isMounted) setIsAIFetching(false);
-          return;
-        }
-        
+        if (!token) return;
+
         const res = await fetch(`${API_URL}/ai/proactive-messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ stats, guard_context: { status: guardStatus } })
         });
         const data = await res.json();
-        
+
         if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
-          if (isMounted) {
-            setCachedAIMessages(data.messages);
-            setIsAIFetching(false);
-          }
+          if (isMounted) setCachedAIMessages(data.messages);
           await AsyncStorage.setItem(cacheKey, JSON.stringify({
             timestamp: Date.now(),
             guardStatus,
             tradesLength: trades.length,
             messages: data.messages
           }));
-        } else {
-          if (isMounted) setIsAIFetching(false);
         }
       } catch (e) {
         console.warn('Fetch AI error:', e);
-        if (isMounted) setIsAIFetching(false);
       }
     };
-    
+
     fetchAIMessages();
     return () => { isMounted = false; };
   }, [user?.id, guardStatus, isConnected, trades.length]);
@@ -748,11 +731,11 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
 
           {/* Trading Guard Warning/Goal Banner */}
           {guardStatus !== 'normal' && (
-            <View style={{ 
-              marginBottom: 16, 
-              paddingHorizontal: 16, 
-              paddingVertical: 10, 
-              borderRadius: 16, 
+            <View style={{
+              marginBottom: 16,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 16,
               backgroundColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
               borderWidth: 1,
               borderColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
@@ -764,8 +747,8 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
                 {guardStatus === 'loss_limit' ? <Flame size={14} color="#fff" /> : <Sprout size={14} color="#fff" />}
               </View>
               <Text style={{ fontSize: 11, fontWeight: '800', color: guardStatus === 'loss_limit' ? '#ef4444' : '#10b981', flex: 1 }}>
-                {guardStatus === 'loss_limit' 
-                  ? `DAILY LIMIT HIT: Stop trading for today.` 
+                {guardStatus === 'loss_limit'
+                  ? `DAILY LIMIT HIT: Stop trading for today.`
                   : `GOAL REACHED: Protect your gains!`}
               </Text>
             </View>
@@ -773,109 +756,109 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
 
           {/* Account Balance Card */}
           <TradingGuardVisuals status={guardStatus} visualsEnabled={visualsEnabled}>
-          <View style={{
-            backgroundColor: isDark ? '#1e1b4b' : '#eef2ff',
-            borderRadius: 32,
-            overflow: 'hidden',
-            borderWidth: 1, 
-            borderColor: isDark ? '#312e81' : '#c7d2fe',
-            shadowColor: guardStatus === 'loss_limit' ? '#ef4444' : (guardStatus === 'profit_goal' ? '#10b981' : '#6366f1'), shadowOpacity: isDark ? 0.3 : 0.15, shadowRadius: 24, elevation: 8,
-          }}>
-            {/* Background Gradient */}
-            <LinearGradient 
-              colors={isDark ? ['#2d1b4b', '#1e1b4b'] : ['#e0e7ff', '#eef2ff']} 
-              style={{ position: 'absolute', inset: 0 }} 
-            />
+            <View style={{
+              backgroundColor: isDark ? '#1e1b4b' : '#eef2ff',
+              borderRadius: 32,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: isDark ? '#312e81' : '#c7d2fe',
+              shadowColor: guardStatus === 'loss_limit' ? '#ef4444' : (guardStatus === 'profit_goal' ? '#10b981' : '#6366f1'), shadowOpacity: isDark ? 0.3 : 0.15, shadowRadius: 24, elevation: 8,
+            }}>
+              {/* Background Gradient */}
+              <LinearGradient
+                colors={isDark ? ['#2d1b4b', '#1e1b4b'] : ['#e0e7ff', '#eef2ff']}
+                style={{ position: 'absolute', inset: 0 }}
+              />
 
-            {/* Background Chart SVG */}
-            <BackgroundEquityChart trades={trades} isDark={isDark} />
+              {/* Background Chart SVG */}
+              <BackgroundEquityChart trades={trades} isDark={isDark} />
 
-            {/* Content */}
-            <View style={{ padding: 24 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <BrandLogo size={14} whiteJournal={isDark} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isConnected ? '#10b981' : '#f59e0b' }} />
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: isConnected ? '#10b981' : '#f59e0b', letterSpacing: 0.5 }}>{isConnected ? 'LIVE' : 'OFFLINE'}</Text>
+              {/* Content */}
+              <View style={{ padding: 24 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <BrandLogo size={14} whiteJournal={isDark} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isConnected ? '#10b981' : '#f59e0b' }} />
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: isConnected ? '#10b981' : '#f59e0b', letterSpacing: 0.5 }}>{isConnected ? 'LIVE' : 'OFFLINE'}</Text>
+                  </View>
                 </View>
-              </View>
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <Wallet size={12} color={isDark ? '#a5b4fc' : '#6366f1'} />
-                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#6366f1', letterSpacing: 1 }}>TOTAL BALANCE</Text>
-              </View>
-              
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <Text style={{ fontSize: 40, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b', letterSpacing: -1, flex: 1 }}>{formattedBalance}</Text>
-                <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={{ 
-                    width: 36, height: 36, borderRadius: 18, 
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.1)', 
-                    alignItems: 'center', justifyContent: 'center' 
-                }}>
-                  {hideBalance ? <Eye size={18} color={isDark ? '#a5b4fc' : '#6366f1'} /> : <EyeOff size={18} color={isDark ? '#a5b4fc' : '#6366f1'} />}
-                </TouchableOpacity>
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#818cf8' : '#6366f1' }}>Equity ✨</Text>
-                  <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b' }}>{formattedEquity}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Wallet size={12} color={isDark ? '#a5b4fc' : '#6366f1'} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#6366f1', letterSpacing: 1 }}>TOTAL BALANCE</Text>
                 </View>
-                <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {growthNum >= 0 ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: growthNum >= 0 ? '#10b981' : '#ef4444' }}>
-                    {growthNum >= 0 ? '+' : ''}{stats.growth}%
-                  </Text>
-                </View>
-                {accountInfo?.name && (
-                  <>
-                    <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#4f46e5', flexShrink: 1 }} numberOfLines={1}>{accountInfo.name}</Text>
-                  </>
-                )}
-              </View>
-            </View>
 
-            {/* Dynamic Sync Button (Full Width Bottom) - Only show if triggered */}
-            {guardStatus !== 'normal' && (
-              <TouchableOpacity
-                onPress={() => {
-                   if (guardStatus === 'loss_limit') {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                   } else if (guardStatus === 'profit_goal') {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                   } else {
-                      Haptics.selectionAsync();
-                   }
-                   refresh();
-                }}
-                disabled={refreshing}
-                style={{
-                  backgroundColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.9)' : (guardStatus === 'profit_goal' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(99, 102, 241, 0.9)'),
-                  paddingVertical: 14,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                  gap: 8
-                }}
-              >
-                {refreshing ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    {guardStatus === 'loss_limit' ? <Lock size={14} color="#fff" /> : <RefreshCw size={14} color="#fff" />}
-                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>
-                      {guardStatus === 'loss_limit' ? 'STOP TRADING' : 'TARGET ACHIEVED'}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <Text style={{ fontSize: 40, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b', letterSpacing: -1, flex: 1 }}>{formattedBalance}</Text>
+                  <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={{
+                    width: 36, height: 36, borderRadius: 18,
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(99,102,241,0.1)',
+                    alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {hideBalance ? <Eye size={18} color={isDark ? '#a5b4fc' : '#6366f1'} /> : <EyeOff size={18} color={isDark ? '#a5b4fc' : '#6366f1'} />}
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#818cf8' : '#6366f1' }}>Equity ✨</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '900', color: isDark ? '#ffffff' : '#1e1b4b' }}>{formattedEquity}</Text>
+                  </View>
+                  <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    {growthNum >= 0 ? <TrendingUp size={14} color="#10b981" /> : <TrendingDown size={14} color="#ef4444" />}
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: growthNum >= 0 ? '#10b981' : '#ef4444' }}>
+                      {growthNum >= 0 ? '+' : ''}{stats.growth}%
                     </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
+                  </View>
+                  {accountInfo?.name && (
+                    <>
+                      <View style={{ width: 1, height: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.3)' }} />
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#a5b4fc' : '#4f46e5', flexShrink: 1 }} numberOfLines={1}>{accountInfo.name}</Text>
+                    </>
+                  )}
+                </View>
+              </View>
 
-          </View>
-        </TradingGuardVisuals>
-      </View>
+              {/* Dynamic Sync Button (Full Width Bottom) - Only show if triggered */}
+              {guardStatus !== 'normal' && (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (guardStatus === 'loss_limit') {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    } else if (guardStatus === 'profit_goal') {
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    } else {
+                      Haptics.selectionAsync();
+                    }
+                    refresh();
+                  }}
+                  disabled={refreshing}
+                  style={{
+                    backgroundColor: guardStatus === 'loss_limit' ? 'rgba(239, 68, 68, 0.9)' : (guardStatus === 'profit_goal' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(99, 102, 241, 0.9)'),
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                >
+                  {refreshing ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      {guardStatus === 'loss_limit' ? <Lock size={14} color="#fff" /> : <RefreshCw size={14} color="#fff" />}
+                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>
+                        {guardStatus === 'loss_limit' ? 'STOP TRADING' : 'TARGET ACHIEVED'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+            </View>
+          </TradingGuardVisuals>
+        </View>
 
         {/* ── Content Area ─────────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: 20 }}>
@@ -963,25 +946,17 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
 
       {/* AI Chat Floating Action Button */}
 
-      <AIChatFAB 
-        onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)} 
-        showProactiveBubble={true} 
+      <AIChatFAB
+        onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)}
+        showProactiveBubble={true}
         proactiveMessage={(() => {
-          if (!isAICacheLoaded || isAIFetching) return "";
           if (cachedAIMessages && cachedAIMessages.length > 0) {
             const selected = cachedAIMessages[randomAIIndex % cachedAIMessages.length];
             return typeof selected === 'string' ? selected : String(Object.values(Object(selected))[0] || selected);
           }
-          if (guardStatus === 'loss_limit') return "Limit loss tercapai. Istirahat yuk 🛑";
-          if (guardStatus === 'profit_goal') return "Target profit tercapai! Amankan profit 🎯";
-          if (!isConnected) return "MT5 Offline. Hubungkan untuk memantau market! 🔌";
-          
-          return stats.todayTrades === 0 
-            ? "Siap trading hari ini? \uD83D\uDCA1" 
-            : stats.todayPnl >= 0 
-              ? `Profit $${stats.todayPnl.toFixed(2)} mantap! \uD83D\uDD25` 
-              : `Loss $${Math.abs(stats.todayPnl).toFixed(2)}. Evaluasi yuk \uD83E\uDDE0`;
-        })()} 
+
+          return "";
+        })()}
       />
     </View>
   );
