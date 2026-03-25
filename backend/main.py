@@ -2174,6 +2174,69 @@ Format Markdown. Bold setiap poin utama. Struktur:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class ProactiveMessageRequest(BaseModel):
+    stats: Optional[dict] = None
+    guard_context: Optional[dict] = None
+
+@app.post("/api/ai/proactive-messages")
+async def generate_proactive_messages(req: ProactiveMessageRequest, user: User = Depends(get_current_user)):
+    if not XAI_AVAILABLE:
+        raise HTTPException(status_code=500, detail="xAI tidak tersedia.")
+    
+    stats = req.stats or {}
+    guard = req.guard_context or {}
+    
+    prompt = f"""Kamu adalah AI Trading Coach di aplikasi TimeJournal.
+Hasilkan 4 pesan proaktif super singkat untuk menyapa user "{user.name}".
+
+Konteks User:
+Trade Hari Ini: {stats.get('todayTrades', 0)} trade, PnL: ${stats.get('todayPnl', 0):.2f}
+Win Rate: {stats.get('winRate', 0):.1f}%, PnL Total: ${stats.get('totalPnl', 0):.2f}
+Trading Guard: {guard.get('status', 'normal').upper()}
+
+ATURAN WAJIB:
+1. Jika Guard "LOSS_LIMIT": Keempat pesan harus menyuruh istirahat/evaluasi.
+2. Jika Guard "PROFIT_GOAL": Keempat pesan harus menyuruh amankan profit.
+3. Jika Normal: Beri 4 variasi (Teguran/Apresiasi, Insight, Sapaan santai, Risk management).
+4. Gunakan bahasa Indonesia. Max 15 kata per pesan.
+
+BALAS HANYA DENGAN ARRAY STRING JSON SEPERTI CONTOH INI (TANPA TEKS LAIN!):
+["pesan 1", "pesan 2", "pesan 3", "pesan 4"]
+"""
+    try:
+        response = ai_client.chat.completions.create(
+            model="grok-3-fast",
+            messages=[
+                {"role": "system", "content": "You are a professional Coach. You MUST return ONLY a JSON Array containing 4 strings! No markdown blocks."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8, max_tokens=300
+        )
+        raw = response.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.strip().startswith("json"):
+                raw = raw.strip()[4:]
+        
+        import json as json_lib
+        result = json_lib.loads(raw.strip())
+        
+        if not isinstance(result, list):
+            result = [result]
+            
+        safe_messages = []
+        for item in result:
+            if isinstance(item, str):
+                safe_messages.append(item)
+            elif isinstance(item, dict):
+                v = item.get("pesan") or item.get("message") or (list(item.values())[0] if item else "")
+                safe_messages.append(str(v))
+            else:
+                safe_messages.append(str(item))
+                
+        return {"success": True, "messages": safe_messages}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/news")
 @app.get("/api/calendar/events")

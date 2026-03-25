@@ -629,6 +629,58 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
     return { totalPnl, wins, losses, winRate, profitFactor, growth, todayPnl, todayTrades };
   }, [trades, accountInfo]);
 
+  const [cachedAIMessages, setCachedAIMessages] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user?.id || !isConnected) return;
+    let isMounted = true;
+    
+    const fetchAIMessages = async () => {
+      try {
+        const cacheKey = `ai_proactive_cache_${user.id}`;
+        const cachedRaw = await AsyncStorage.getItem(cacheKey);
+        
+        if (cachedRaw) {
+          try {
+            const cached = JSON.parse(cachedRaw);
+            const ageHours = (Date.now() - (cached.timestamp || 0)) / (1000 * 60 * 60);
+            if (ageHours < 1 && cached.guardStatus === guardStatus && cached.tradesLength === trades.length) {
+              if (isMounted && Array.isArray(cached.messages) && cached.messages.length > 0) {
+                setCachedAIMessages(cached.messages);
+              }
+              return;
+            }
+          } catch (pe) { console.warn('Cache parse error'); }
+        }
+        
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+        
+        const res = await fetch(`${API_URL}/ai/proactive-messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ stats, guard_context: { status: guardStatus } })
+        });
+        const data = await res.json();
+        
+        if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+          if (isMounted) setCachedAIMessages(data.messages);
+          await AsyncStorage.setItem(cacheKey, JSON.stringify({
+            timestamp: Date.now(),
+            guardStatus,
+            tradesLength: trades.length,
+            messages: data.messages
+          }));
+        }
+      } catch (e) {
+        console.warn('Fetch AI error:', e);
+      }
+    };
+    
+    fetchAIMessages();
+    return () => { isMounted = false; };
+  }, [user?.id, guardStatus, isConnected, trades.length]);
+
   if (loading) {
     return <HomeScreenSkeleton isDark={isDark} />;
   }
@@ -891,13 +943,21 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
       <AIChatFAB 
         onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)} 
         showProactiveBubble={true} 
-        proactiveMessage={
-            stats.todayTrades === 0 
-              ? "Siap trading hari ini? \uD83D\uDCA1" 
-              : stats.todayPnl >= 0 
-                ? `Profit $${stats.todayPnl.toFixed(2)} mantap! \uD83D\uDD25` 
-                : `Loss $${Math.abs(stats.todayPnl).toFixed(2)}. Evaluasi yuk \uD83E\uDDE0`
-        } 
+        proactiveMessage={(() => {
+          if (cachedAIMessages && cachedAIMessages.length > 0) {
+            const selected = cachedAIMessages[Math.floor(Math.random() * cachedAIMessages.length)];
+            return typeof selected === 'string' ? selected : String(Object.values(Object(selected))[0] || selected);
+          }
+          if (guardStatus === 'loss_limit') return "Limit loss tercapai. Istirahat yuk 🛑";
+          if (guardStatus === 'profit_goal') return "Target profit tercapai! Amankan profit 🎯";
+          if (!isConnected) return "MT5 Offline. Hubungkan untuk memantau market! 🔌";
+          
+          return stats.todayTrades === 0 
+            ? "Siap trading hari ini? \uD83D\uDCA1" 
+            : stats.todayPnl >= 0 
+              ? `Profit $${stats.todayPnl.toFixed(2)} mantap! \uD83D\uDD25` 
+              : `Loss $${Math.abs(stats.todayPnl).toFixed(2)}. Evaluasi yuk \uD83E\uDDE0`;
+        })()} 
       />
     </View>
   );
