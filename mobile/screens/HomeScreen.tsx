@@ -630,17 +630,23 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
   }, [trades, accountInfo]);
 
   const [cachedAIMessages, setCachedAIMessages] = useState<string[]>([]);
+  const [isAICacheLoaded, setIsAICacheLoaded] = useState(false);
   const randomAIIndex = useMemo(() => Math.floor(Math.random() * 10), []);
 
   useEffect(() => {
-    if (!user?.id || !isConnected) return;
     let isMounted = true;
     
     const fetchAIMessages = async () => {
       try {
+        if (!user?.id) {
+          if (isMounted) setIsAICacheLoaded(true);
+          return;
+        }
+
         const cacheKey = `ai_proactive_cache_${user.id}`;
         const cachedRaw = await AsyncStorage.getItem(cacheKey);
         
+        let hasValidCache = false;
         if (cachedRaw) {
           try {
             const cached = JSON.parse(cachedRaw);
@@ -648,11 +654,14 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
             if (ageHours < 1 && cached.guardStatus === guardStatus && cached.tradesLength === trades.length) {
               if (isMounted && Array.isArray(cached.messages) && cached.messages.length > 0) {
                 setCachedAIMessages(cached.messages);
+                hasValidCache = true;
               }
-              return;
             }
           } catch (pe) { console.warn('Cache parse error'); }
         }
+        
+        if (isMounted) setIsAICacheLoaded(true);
+        if (hasValidCache || !isConnected) return;
         
         const token = await AsyncStorage.getItem('userToken');
         if (!token) return;
@@ -945,6 +954,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
         onPress={() => onOpenAIChat(trades, stats, guardStatus, dailyPnL, guardSettings)} 
         showProactiveBubble={true} 
         proactiveMessage={(() => {
+          if (!isAICacheLoaded) return "";
           if (cachedAIMessages && cachedAIMessages.length > 0) {
             const selected = cachedAIMessages[randomAIIndex % cachedAIMessages.length];
             return typeof selected === 'string' ? selected : String(Object.values(Object(selected))[0] || selected);

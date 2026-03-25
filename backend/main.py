@@ -2189,9 +2189,9 @@ async def generate_proactive_messages(req: ProactiveMessageRequest, user: User =
     prompt = f"""Kamu adalah AI Trading Coach di aplikasi TimeJournal.
 Hasilkan 4 pesan proaktif super singkat untuk menyapa user "{user.name}".
 
-Konteks User:
-Trade Hari Ini: {stats.get('todayTrades', 0)} trade, PnL: ${stats.get('todayPnl', 0):.2f}
-Win Rate: {stats.get('winRate', 0):.1f}%, PnL Total: ${stats.get('totalPnl', 0):.2f}
+Konteks HARI INI:
+Total Trade: {stats.get('todayTrades', 0)}
+PnL Hari Ini: ${stats.get('todayPnl', 0):.2f}
 Trading Guard: {guard.get('status', 'normal').upper()}
 
 ATURAN WAJIB:
