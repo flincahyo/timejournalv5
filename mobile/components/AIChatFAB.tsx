@@ -65,9 +65,12 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
 
   }, [scale, glowOpacity, shimmer, sweepAnim]);
 
+  const hasShown = useRef(false);
+
   // Proactive Bubble Animation
   useEffect(() => {
-    if (showProactiveBubble && proactiveMessage) {
+    if (showProactiveBubble && proactiveMessage && !hasShown.current) {
+      hasShown.current = true;
       setIsBubbleVisible(true);
       bubbleScale.setValue(0);
       bubbleOpacity.setValue(0);
@@ -92,7 +95,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
       }, 8000);
 
       return () => clearTimeout(timeout);
-    } else {
+    } else if (!showProactiveBubble) {
       hideBubble();
     }
   }, [showProactiveBubble, proactiveMessage, bubbleScale, bubbleOpacity]);

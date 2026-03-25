@@ -630,6 +630,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
   }, [trades, accountInfo]);
 
   const [cachedAIMessages, setCachedAIMessages] = useState<string[]>([]);
+  const randomAIIndex = useMemo(() => Math.floor(Math.random() * 10), []);
 
   useEffect(() => {
     if (!user?.id || !isConnected) return;
@@ -945,7 +946,7 @@ const HomeScreen = React.memo(({ onNavigate, onOpenSettings, onOpenAIChat, user:
         showProactiveBubble={true} 
         proactiveMessage={(() => {
           if (cachedAIMessages && cachedAIMessages.length > 0) {
-            const selected = cachedAIMessages[Math.floor(Math.random() * cachedAIMessages.length)];
+            const selected = cachedAIMessages[randomAIIndex % cachedAIMessages.length];
             return typeof selected === 'string' ? selected : String(Object.values(Object(selected))[0] || selected);
           }
           if (guardStatus === 'loss_limit') return "Limit loss tercapai. Istirahat yuk 🛑";
