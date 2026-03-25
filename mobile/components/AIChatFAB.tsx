@@ -66,11 +66,13 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
   }, [scale, glowOpacity, shimmer, sweepAnim]);
 
   const hasShown = useRef(false);
+  const [displayedMessage, setDisplayedMessage] = useState("");
 
   // Proactive Bubble Animation
   useEffect(() => {
     if (showProactiveBubble && proactiveMessage && !hasShown.current) {
       hasShown.current = true;
+      setDisplayedMessage(proactiveMessage);
       setIsBubbleVisible(true);
       bubbleScale.setValue(0);
       bubbleOpacity.setValue(0);
@@ -135,7 +137,7 @@ export const AIChatFAB: React.FC<AIChatFABProps> = ({
           ]}
         >
           <Text style={[styles.bubbleText, { color: isDark ? '#e2e8f0' : '#334155' }]}>
-            {proactiveMessage}
+            {displayedMessage}
           </Text>
           <TouchableOpacity onPress={hideBubble} style={styles.closeButton}>
             <X size={12} color={isDark ? '#94a3b8' : '#64748b'} />
